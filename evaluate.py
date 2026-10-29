@@ -1,44 +1,40 @@
 
-"""
-==========================================================
-U-NET MODEL EVALUATION AND PREDICTION
-==========================================================
+# ==========================================================
+# U-NET MODEL EVALUATION AND PREDICTION
+# ==========================================================
 
-This script evaluates a trained U-Net model using paired
-SAR intensity and texture inputs.
+# This script evaluates a trained U-Net model using paired
+# SAR intensity and texture inputs.
 
-The model uses three segmentation classes:
+# The model performs binary lava segmentation.
 
-    0 = Background
-    1 = Faults
-    2 = Lava
+# The network produces one foreground output:
 
-The network produces two independent foreground outputs:
+#     Channel 0 = Lava
 
-    Channel 0 = Faults
-    Channel 1 = Lava
+# Pixels below the lava probability threshold are
+# classified as non-lava.
 
-If ground-truth masks are available, IoU and Dice scores
-are calculated.
+# If ground-truth masks are available, lava IoU and Dice
+# scores are calculated.
 
-If masks are unavailable, inference-only mode is used.
+# If masks are unavailable, inference-only mode is used.
 
-The script:
-- Displays randomly selected test tiles and predictions.
-- Calculates class probability maps.
-- Reconstructs overlapping tile predictions.
-- Displays the reconstructed segmentation.
-- Creates an overlay on the original SAR image.
-- Saves the final segmentation image.
-- Reads georeferencing from the original GeoTIFF.
+# The script:
+# - Calculates lava probability maps.
+# - Reconstructs overlapping tile predictions.
+# - Displays the reconstructed segmentation.
+# - Creates an overlay on the original SAR image.
+# - Saves the final segmentation image.
+# - Reads georeferencing from the original GeoTIFF.
 
-INPUT CHANNELS
---------------
-Channel 0: SAR intensity, scaled to 0-1.
-Channel 1: Texture, original float32 ratios.
+# INPUT CHANNELS
+# --------------
+# Channel 0: SAR intensity, scaled to 0-1.
+# Channel 1: Texture, original float32 ratios.
 
-==========================================================
-"""
+# ==========================================================
+
 
 # ==========================================================
 # IMPORTS
@@ -243,22 +239,19 @@ SHAPEFILE_OUTPUT_FOLDER.mkdir(
 TEST_BATCH_SIZE = 32
 
 
-# Number of randomly selected test tiles displayed.
 
-PLOT_EXAMPLES = 4
 
 
 # Saved model checkpoint.
 
-MODEL_PATH = Path("unet_2output_best.pth")
+MODEL_PATH = Path("unet_lava_best.pth")
 
 
 # Independent foreground probability thresholds.
 #
-# Channel 0 = Faults
-# Channel 1 = Lava
-
-FAULT_THRESHOLD = 0.5
+# Lava probability threshold.
+#
+# Channel 0 = Lava
 
 LAVA_THRESHOLD = 0.5
 
@@ -275,15 +268,14 @@ MODEL_OUTPUT_FOLDER = Path("model_outputs")
 def calculate_intersection_union(
     predictions,
     masks,
-    num_classes=2
+    num_classes=1
 ):
 
     """
-    Calculate intersection and union independently
-    for faults and lava.
+    Calculate intersection and union for lava.
 
-    predictions: [B, 2, H, W]
-    masks:       [B, 2, H, W]
+    predictions: [B, 1, H, W]
+    masks:       [B, 1, H, W]
     """
 
     probabilities = torch.sigmoid(predictions)
@@ -294,11 +286,7 @@ def calculate_intersection_union(
     )
 
     predicted_binary[:, 0] = (
-        probabilities[:, 0] >= FAULT_THRESHOLD
-    )
-
-    predicted_binary[:, 1] = (
-        probabilities[:, 1] >= LAVA_THRESHOLD
+        probabilities[:, 0] >= LAVA_THRESHOLD
     )
 
     true_binary = masks > 0.5
@@ -337,15 +325,14 @@ def calculate_intersection_union(
 def calculate_dice_components(
     predictions,
     masks,
-    num_classes=2
+    num_classes=1
 ):
 
     """
-    Calculate Dice components independently
-    for faults and lava.
+    Calculate Dice components for lava.
 
-    predictions: [B, 2, H, W]
-    masks:       [B, 2, H, W]
+    predictions: [B, 1, H, W]
+    masks:       [B, 1, H, W]
     """
 
     probabilities = torch.sigmoid(predictions)
@@ -356,11 +343,7 @@ def calculate_dice_components(
     )
 
     predicted_binary[:, 0] = (
-        probabilities[:, 0] >= FAULT_THRESHOLD
-    )
-
-    predicted_binary[:, 1] = (
-        probabilities[:, 1] >= LAVA_THRESHOLD
+        probabilities[:, 0] >= LAVA_THRESHOLD
     )
 
     true_binary = masks > 0.5
@@ -399,7 +382,6 @@ def calculate_dice_components(
         predicted_totals,
         true_totals
     )
-
 
 # ==========================================================
 # INFERENCE-ONLY DATASET
@@ -633,27 +615,27 @@ model.eval()
 if has_masks:
 
     total_intersection = torch.zeros(
-        2,
+        1,
         device=device
     )
 
     total_union = torch.zeros(
-        2,
+        1,
         device=device
     )
 
     total_dice_intersection = torch.zeros(
-        2,
+        1,
         device=device
     )
 
     total_predicted = torch.zeros(
-        2,
+        1,
         device=device
     )
 
     total_true = torch.zeros(
-        2,
+        1,
         device=device
     )
 
@@ -711,19 +693,27 @@ if has_masks:
         )
     )
 
-    faults_iou = test_iou[0].item()
+    lava_iou = test_iou[0].item()
 
-    lava_iou = test_iou[1].item()
+    # ======================================================
+    # CALCULATE DICE
+    # ======================================================
 
-    valid_iou = test_iou[
-        ~torch.isnan(test_iou)
-    ]
-
-    mean_foreground_iou = (
-        valid_iou.mean().item()
-        if valid_iou.numel() > 0
-        else float("nan")
+    dice_denominator = (
+        total_predicted + total_true
     )
+
+    test_dice = torch.where(
+        dice_denominator > 0,
+        2.0 * total_dice_intersection
+        / dice_denominator.clamp(min=1),
+        torch.full_like(
+            dice_denominator,
+            float("nan")
+        )
+    )
+
+    lava_dice = test_dice[0].item()
 
 
     # ======================================================
@@ -769,13 +759,8 @@ if has_masks:
 
     print("=" * 50)
 
-    print(f"Faults IoU:       {faults_iou:.6f}")
     print(f"Lava IoU:         {lava_iou:.6f}")
-    print(f"Mean FG IoU:      {mean_foreground_iou:.6f}")
-
-    print(f"Faults Dice:      {faults_dice:.6f}")
     print(f"Lava Dice:        {lava_dice:.6f}")
-    print(f"Mean FG Dice:     {mean_foreground_dice:.6f}")
 
     print("=" * 50)
 
@@ -787,58 +772,6 @@ else:
     )
 
 
-# ==========================================================
-# SELECT RANDOM TEST TILES FOR VISUAL INSPECTION
-# ==========================================================
-
-plot_examples = min(
-    PLOT_EXAMPLES,
-    len(test_dataset)
-)
-
-plot_indices = random.sample(
-    range(len(test_dataset)),
-    plot_examples
-)
-
-plot_images = []
-
-plot_masks = []
-
-for idx in plot_indices:
-
-    image, mask, filename = test_dataset[idx]
-
-    plot_images.append(image)
-
-    plot_masks.append(mask)
-
-images = torch.stack(
-    plot_images
-).to(device)
-
-masks = torch.stack(
-    plot_masks
-).to(device)
-
-
-# ==========================================================
-# GENERATE EXAMPLE PREDICTIONS
-# ==========================================================
-
-with torch.no_grad():
-
-    predictions = model(images)
-
-    probabilities = torch.sigmoid(predictions)
-
-    predicted_faults = (
-        probabilities[:, 0] >= FAULT_THRESHOLD
-    )
-
-    predicted_lava = (
-        probabilities[:, 1] >= LAVA_THRESHOLD
-    )
 
 
 # ==========================================================
@@ -846,8 +779,7 @@ with torch.no_grad():
 # ==========================================================
 
 class_cmap = ListedColormap([
-    "#FAC6FE",  # Background
-    "#00bebe",  # Faults
+    "#FAC6FE",  # Non-lava
     "#b30d66"   # Lava
 ])
 
@@ -859,240 +791,28 @@ class_cmap = ListedColormap([
 def create_class_map(probabilities):
 
     """
-    Convert independent foreground probabilities
-    into a single three-label segmentation.
+    Convert lava probabilities into a binary segmentation.
 
-    0 = Background
-    1 = Faults
-    2 = Lava
-
-    If both thresholds are exceeded, assign the
-    class with the higher probability.
+    0 = Non-lava
+    1 = Lava
     """
 
-    fault_prob = probabilities[:, 0]
-
-    lava_prob = probabilities[:, 1]
-
-    fault_detected = (
-        fault_prob >= FAULT_THRESHOLD
-    )
+    lava_prob = probabilities[:, 0]
 
     lava_detected = (
         lava_prob >= LAVA_THRESHOLD
     )
 
     class_map = torch.zeros_like(
-        fault_prob,
+        lava_prob,
         dtype=torch.long
     )
 
-    class_map[fault_detected] = 1
-
-    lava_selected = lava_detected & (
-        ~fault_detected
-        | (lava_prob > fault_prob)
-    )
-
-    class_map[lava_selected] = 2
+    class_map[lava_detected] = 1
 
     return class_map
 
 
-predicted_classes = create_class_map(
-    probabilities
-)
-
-
-# ==========================================================
-# DISPLAY EXAMPLE TILES
-# ==========================================================
-
-if has_masks:
-
-    # Five columns:
-    #
-    # 1. SAR input
-    # 2. Ground truth
-    # 3. Predicted segmentation
-    # 4. Fault probability
-    # 5. Lava probability
-
-    fig, axes = plt.subplots(
-        plot_examples,
-        5,
-        figsize=(20, 4 * plot_examples),
-        squeeze=False
-    )
-
-    for i in range(plot_examples):
-
-        # Display SAR channel 0 only.
-        #
-        # Texture channel 1 is still supplied to the
-        # model but is not displayed in this plot.
-
-        image = images[i, 0].cpu()
-
-        true_mask = torch.zeros_like(
-            masks[i, 0],
-            dtype=torch.long
-        )
-
-        true_mask[masks[i, 0] > 0.5] = 1
-
-        true_mask[masks[i, 1] > 0.5] = 2
-
-        true_mask = true_mask.cpu()
-
-        predicted_class = (
-            predicted_classes[i].cpu()
-        )
-
-        fault_probability = (
-            probabilities[i, 0].cpu()
-        )
-
-        lava_probability = (
-            probabilities[i, 1].cpu()
-        )
-
-        axes[i][0].imshow(
-            image,
-            cmap="gray"
-        )
-
-        axes[i][0].set_title("Input image")
-
-        axes[i][1].imshow(
-            true_mask,
-            cmap=class_cmap,
-            vmin=0,
-            vmax=2
-        )
-
-        axes[i][1].set_title("Ground truth")
-
-        axes[i][2].imshow(
-            predicted_class,
-            cmap=class_cmap,
-            vmin=0,
-            vmax=2
-        )
-
-        axes[i][2].set_title(
-            "Predicted segmentation"
-        )
-
-        axes[i][3].imshow(
-            fault_probability,
-            cmap="seismic",
-            vmin=0,
-            vmax=1
-        )
-
-        axes[i][3].set_title(
-            "Fault probability"
-        )
-
-        axes[i][4].imshow(
-            lava_probability,
-            cmap="seismic",
-            vmin=0,
-            vmax=1
-        )
-
-        axes[i][4].set_title(
-            "Lava probability"
-        )
-
-        for ax in axes[i]:
-
-            ax.axis("off")
-
-
-else:
-
-    # Four columns:
-    #
-    # 1. SAR input
-    # 2. Predicted segmentation
-    # 3. Fault probability
-    # 4. Lava probability
-
-    fig, axes = plt.subplots(
-        plot_examples,
-        4,
-        figsize=(16, 4 * plot_examples),
-        squeeze=False
-    )
-
-    for i in range(plot_examples):
-
-        # Display SAR channel 0 only.
-
-        image = images[i, 0].cpu()
-
-        predicted_class = (
-            predicted_classes[i].cpu()
-        )
-
-        fault_probability = (
-            probabilities[i, 0].cpu()
-        )
-
-        lava_probability = (
-            probabilities[i, 1].cpu()
-        )
-
-        axes[i][0].imshow(
-            image,
-            cmap="gray"
-        )
-
-        axes[i][0].set_title("Input image")
-
-        axes[i][1].imshow(
-            predicted_class,
-            cmap=class_cmap,
-            vmin=0,
-            vmax=2
-        )
-
-        axes[i][1].set_title(
-            "Predicted segmentation"
-        )
-
-        axes[i][2].imshow(
-            fault_probability,
-            cmap="seismic",
-            vmin=0,
-            vmax=1
-        )
-
-        axes[i][2].set_title(
-            "Fault probability"
-        )
-
-        axes[i][3].imshow(
-            lava_probability,
-            cmap="seismic",
-            vmin=0,
-            vmax=1
-        )
-
-        axes[i][3].set_title(
-            "Lava probability"
-        )
-
-        for ax in axes[i]:
-
-            ax.axis("off")
-
-
-plt.tight_layout()
-
-plt.show()
 
 
 # ==========================================================
@@ -1154,7 +874,7 @@ image_height, image_width = (
 # ==========================================================
 
 probability_sum = torch.zeros(
-    (2, image_height, image_width),
+    (1, image_height, image_width),
     dtype=torch.float32
 )
 
@@ -1216,8 +936,8 @@ final_mask = create_class_map(
 
 fig, axes = plt.subplots(
     1,
-    3,
-    figsize=(18, 6)
+    2,
+    figsize=(12, 6)
 )
 
 # ----------------------------------------------------------
@@ -1225,7 +945,7 @@ fig, axes = plt.subplots(
 # ----------------------------------------------------------
 
 axes[0].imshow(
-    average_probability[1],
+    average_probability[0],
     cmap="seismic",
     vmin=0,
     vmax=1
@@ -1246,7 +966,7 @@ axes[1].imshow(
     final_mask,
     cmap=class_cmap,
     vmin=0,
-    vmax=2
+    vmax=1
 )
 
 axes[1].set_title(
@@ -1254,24 +974,6 @@ axes[1].set_title(
 )
 
 axes[1].axis("off")
-
-
-# ----------------------------------------------------------
-# FAULT PROBABILITY
-# ----------------------------------------------------------
-
-axes[2].imshow(
-    average_probability[0],
-    cmap="seismic",
-    vmin=0,
-    vmax=1
-)
-
-axes[2].set_title(
-    "Fault probability map"
-)
-
-axes[2].axis("off")
 
 plt.tight_layout()
 
@@ -1289,14 +991,9 @@ evaluation_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 final_mask_np = final_mask.cpu().numpy().astype(np.uint8)
 
-fault_probability_np = (
+lava_probability_np = (
     average_probability[0].cpu().numpy().astype(np.float32)
 )
-
-lava_probability_np = (
-    average_probability[1].cpu().numpy().astype(np.float32)
-)
-
 
 # ==========================================================
 # SAVE FINAL SEGMENTATION GEOTIFF
@@ -1344,7 +1041,7 @@ plt.imsave(
     final_mask_np,
     cmap=class_cmap,
     vmin=0,
-    vmax=2,
+    vmax=1,
 )
 
 print(f"Saved segmentation PNG: {segmentation_png_path}")
@@ -1355,7 +1052,6 @@ print(f"Saved segmentation PNG: {segmentation_png_path}")
 # ==========================================================
 
 probability_maps = {
-    "fault": fault_probability_np,
     "lava": lava_probability_np,
 }
 
@@ -1464,25 +1160,13 @@ overlay = np.zeros(
 )
 
 
-# ==========================================================
-# FAULT OVERLAY
-# ==========================================================
-
-fault_pixels = final_mask_np == 1
-
-overlay[fault_pixels] = [
-    0.0,
-    0.4,
-    1.0,
-    0.45,
-]
 
 
 # ==========================================================
 # LAVA OVERLAY
 # ==========================================================
 
-lava_pixels = final_mask_np == 2
+lava_pixels = final_mask_np == 1
 
 overlay[lava_pixels] = [
     1.0,
@@ -1563,9 +1247,8 @@ unique, counts = torch.unique(
 )
 
 class_names = {
-    0: "Background",
-    1: "Faults",
-    2: "Lava"
+    0: "Non-lava",
+    1: "Lava"
 }
 
 print()

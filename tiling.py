@@ -320,8 +320,7 @@ def load_dataset(
 
             mask = mask.point(
                 lambda p:
-                128 if p == 128
-                else 255 if p == 255
+                255 if p == 255
                 else 0
             )
 

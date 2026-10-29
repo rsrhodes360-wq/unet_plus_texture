@@ -3,20 +3,19 @@
 # ==========================================================
 #
 # This script analyses the tiled segmentation masks used to
-# train the three-class U-Net model.
+# train the lava-only U-Net model.
 #
 # The script reports:
 #   - The total number of training masks.
 #   - The number and percentage of pixels belonging to each class.
 #   - How many tiles contain each class.
-#   - The amount of fault coverage within fault-containing tiles.
+#   - The amount of lava coverage within lava-containing tiles.
 #   - Suggested class weights using median-frequency balancing.
 #
 # This script does not modify any masks or training data.
 #
 # The expected mask pixel values are:
-#   0   = Background
-#   128 = Faults
+#   0   = Non-lava
 #   255 = Lava
 #
 # Run this script after changing or regenerating the training
@@ -50,8 +49,7 @@ MASK_FOLDER = Path("data/training/masks")
 # Each mask is a single-channel image in which the pixel value
 # identifies the segmentation class.
 CLASS_NAMES = {
-    0: "Background",
-    128: "Faults",
+    0: "Non-lava",
     255: "Lava",
 }
 
@@ -82,7 +80,6 @@ print(f"Training masks found: {len(mask_files)}")
 # Initialise a running pixel count for each mask class.
 class_pixel_counts = {
     0: 0,
-    128: 0,
     255: 0,
 }
 
@@ -134,12 +131,8 @@ for class_idx, class_name in CLASS_NAMES.items():
 # COUNT TILES CONTAINING EACH CLASS
 # ==========================================================
 
-# Initialise counters describing which classes occur within
-# individual training tiles.
 tiles_with_background = 0
-tiles_with_faults = 0
 tiles_with_lava = 0
-tiles_with_faults_and_lava = 0
 tiles_with_no_foreground = 0
 
 # Check the class content of every training mask.
@@ -148,54 +141,31 @@ for mask_path in mask_files:
     # Open the mask and convert it to a NumPy array.
     mask = np.array(Image.open(mask_path))
 
-    # Determine whether at least one pixel belonging to each
-    # class is present in the current tile.
+    # Determine whether each class is present.
     has_background = np.any(mask == 0)
-    has_faults = np.any(mask == 128)
     has_lava = np.any(mask == 255)
 
-    # Count tiles containing background.
     if has_background:
         tiles_with_background += 1
 
-    # Count tiles containing faults.
-    if has_faults:
-        tiles_with_faults += 1
-
-    # Count tiles containing lava.
     if has_lava:
         tiles_with_lava += 1
 
-    # Count tiles in which both foreground classes occur.
-    if has_faults and has_lava:
-        tiles_with_faults_and_lava += 1
-
-    # A tile with neither faults nor lava contains no foreground
-    # classes and therefore consists entirely of background.
-    if not has_faults and not has_lava:
+    # Tiles without lava contain only non-lava pixels.
+    if not has_lava:
         tiles_with_no_foreground += 1
-
-
 # ==========================================================
 # PRINT TILE DISTRIBUTION
 # ==========================================================
 
-# Report both the number and percentage of training tiles
-# containing each class or class combination.
 print()
 print("Tile distribution:")
 print()
 
 print(
-    f"Tiles containing background: "
+    f"Tiles containing non-lava: "
     f"{tiles_with_background} "
     f"({tiles_with_background / len(mask_files) * 100:.2f}%)"
-)
-
-print(
-    f"Tiles containing faults: "
-    f"{tiles_with_faults} "
-    f"({tiles_with_faults / len(mask_files) * 100:.2f}%)"
 )
 
 print(
@@ -205,64 +175,49 @@ print(
 )
 
 print(
-    f"Tiles containing both faults and lava: "
-    f"{tiles_with_faults_and_lava} "
-    f"({tiles_with_faults_and_lava / len(mask_files) * 100:.2f}%)"
-)
-
-print(
-    f"Tiles containing no foreground: "
+    f"Tiles containing no lava: "
     f"{tiles_with_no_foreground} "
     f"({tiles_with_no_foreground / len(mask_files) * 100:.2f}%)"
 )
 
-
 # ==========================================================
-# FAULT COVERAGE WITHIN FAULT-CONTAINING TILES
+# LAVA COVERAGE WITHIN LAVA-CONTAINING TILES
 # ==========================================================
 
-# Store the percentage of each tile occupied by fault pixels.
-# Tiles without any fault pixels are excluded from this analysis.
-fault_coverages = []
+lava_coverages = []
 
 for mask_path in mask_files:
 
     # Open the mask and convert it to a NumPy array.
     mask = np.array(Image.open(mask_path))
 
-    # Count the number of pixels labelled as faults.
-    fault_pixels = np.sum(mask == 128)
+    # Count lava pixels.
+    lava_pixels = np.sum(mask == 255)
 
-    # Only include tiles that actually contain faults.
-    if fault_pixels > 0:
+    # Only include tiles containing lava.
+    if lava_pixels > 0:
 
-        # Calculate the percentage of the complete tile occupied
-        # by the fault class.
-        fault_percentage = (fault_pixels / mask.size) * 100
-        fault_coverages.append(fault_percentage)
+        lava_percentage = (lava_pixels / mask.size) * 100
+        lava_coverages.append(lava_percentage)
 
-# Convert the list to a NumPy array so that summary statistics
-# can be calculated.
-fault_coverages = np.array(fault_coverages)
+lava_coverages = np.array(lava_coverages)
 
 
 # ==========================================================
-# PRINT FAULT COVERAGE STATISTICS
+# PRINT LAVA COVERAGE STATISTICS
 # ==========================================================
 
-# These statistics describe how much of a typical
-# fault-containing tile is occupied by the fault class.
 print()
-print("Fault coverage in fault-containing tiles:")
+print("Lava coverage in lava-containing tiles:")
 print()
 
-print(f"Number of fault-containing tiles: {len(fault_coverages)}")
-print(f"Minimum fault coverage: {fault_coverages.min():.2f}%")
-print(f"25th percentile:        {np.percentile(fault_coverages, 25):.2f}%")
-print(f"Median fault coverage:  {np.median(fault_coverages):.2f}%")
-print(f"Mean fault coverage:    {fault_coverages.mean():.2f}%")
-print(f"75th percentile:        {np.percentile(fault_coverages, 75):.2f}%")
-print(f"Maximum fault coverage: {fault_coverages.max():.2f}%")
+print(f"Number of lava-containing tiles: {len(lava_coverages)}")
+print(f"Minimum lava coverage: {lava_coverages.min():.2f}%")
+print(f"25th percentile:       {np.percentile(lava_coverages, 25):.2f}%")
+print(f"Median lava coverage:  {np.median(lava_coverages):.2f}%")
+print(f"Mean lava coverage:    {lava_coverages.mean():.2f}%")
+print(f"75th percentile:       {np.percentile(lava_coverages, 75):.2f}%")
+print(f"Maximum lava coverage: {lava_coverages.max():.2f}%")
 
 
 # ==========================================================
@@ -316,7 +271,6 @@ print()
 print(
     "CLASS_WEIGHTS = ["
     f"{class_weights[0]:.4f}, "
-    f"{class_weights[128]:.4f}, "
     f"{class_weights[255]:.4f}"
     "]"
 )

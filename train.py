@@ -1,78 +1,42 @@
 #  ==========================================================
-
 #  U-NET TRAINING SCRIPT
-
 #  ==========================================================
-
 #
-
-#  This script trains a vanilla U-Net for three-class semantic
-
+#  This script trains a vanilla U-Net for binary lava
 #  segmentation of radar imagery.
-
 #
-
-#  The three segmentation classes are:
-
-#    0 = Background
-
-#    1 = Faults
-
-#    2 = Lava
-
+#  The model produces one foreground output:
 #
-
+#    Channel 0 = Lava
+#
+#  Pixels not labelled as lava have a target value of zero.
+#
 #  The script:
-
+#
 #    - Loads the tiled training and validation datasets.
-
 #    - Optionally applies data augmentation to the training data.
-
-#    - Uses weighted cross-entropy and Dice loss during training.
-
-#    - Calculates IoU for each class on the validation dataset.
-
-#    - Uses mean foreground IoU, calculated from faults and lava,
-
-#      to assess validation performance.
-
+#    - Uses binary cross-entropy and Dice loss during training.
+#    - Calculates lava IoU on the validation dataset.
+#    - Uses lava IoU to assess validation performance.
 #    - Reduces the learning rate if validation performance stops
-
 #      improving.
-
-#    - Saves a checkpoint whenever mean foreground IoU improves.
-
+#    - Saves a checkpoint whenever lava IoU improves.
 #    - Creates a separate folder and Excel training log for each run.
-
 #    - Can optionally resume training from an existing checkpoint.
-
 #
-
 #  Before training begins, the script displays the main training
-
 #  settings and asks the user to confirm that the dataset and class
-
 #  weights have been checked.
-
 #
-
 #  Training data are expected in:
-
-#    data/training/images
-
-#    data/training/masks
-
 #
-
+#    data/training/images
+#    data/training/masks
+#
 #  Validation data are expected in:
-
+#
 #    data/validation/images
-
 #    data/validation/masks
-
-
-
-
 
 #  ==========================================================
 
@@ -202,25 +166,18 @@ RESUME_TRAINING = False
 
 #  to resume training.
 
-MODEL_PATH = "unet_2output_best.pth"
+MODEL_PATH = "unet_lava_best.pth"
 
 
 
-#  Positive-class weights for the two foreground outputs.
-
-#  Channel 0 = Faults
-
-#  Channel 1 = Lava
-
+#  Positive-class weight for the lava output.
 #
+#  Channel 0 = Lava
+#
+#  This is an initial value, not a calculated class weight.
+#  We will assess class imbalance before selecting the final weight.
 
-#  These are initial values, not calculated class weights.
-
-#  We will assess class imbalance before selecting final weights.
-
-
-
-POS_WEIGHTS = [1.0, 1.0]
+POS_WEIGHTS = [1.4]
 
 
 
@@ -284,7 +241,7 @@ RUN_XLSX_PATH = RUN_FOLDER / "training_run.xlsx"
 
 #  particular training run.
 
-RUN_MODEL_PATH = RUN_FOLDER / "unet_2output_best.pth"
+RUN_MODEL_PATH = RUN_FOLDER / "unet_lava_best.pth"
 
 
 
@@ -301,338 +258,168 @@ RUN_MODEL_PATH = RUN_FOLDER / "unet_2output_best.pth"
 
 
 #  ==========================================================
-
 #  INTERSECTION AND UNION CALCULATION
-
 #  ==========================================================
 
-
-
 def calculate_intersection_union(predictions, masks, threshold=0.5):
+    """
+    Calculate intersection and union for lava.
 
+    Channel 0 = Lava
+
+    predictions: [B, 1, H, W]
+    masks:       [B, 1, H, W]
     """
 
-    Calculate intersection and union independently for
-
-    faults and lava.
-
-
-
-    Channel 0 = Faults
-
-    Channel 1 = Lava
-
-
-
-    predictions: [B, 2, H, W]
-
-    masks:       [B, 2, H, W]
-
-    """
-
-
-
-    #  Convert raw logits into independent probabilities.
-
+    # Convert raw logits into probabilities.
     probabilities = torch.sigmoid(predictions)
 
-
-
-    #  Apply the probability threshold to each channel.
-
+    # Apply the probability threshold.
     predicted_binary = probabilities >= threshold
 
-
-
-    #  Convert ground-truth masks to Boolean values.
-
+    # Convert ground-truth masks to Boolean values.
     true_binary = masks > 0.5
 
-
-
-    #  Initialise intersection and union for both classes.
-
+    # Initialise intersection and union for lava.
     intersections = torch.zeros(
-
-        2,
-
+        1,
         device=predictions.device
-
     )
-
-
 
     unions = torch.zeros(
-
-        2,
-
+        1,
         device=predictions.device
-
     )
 
-
-
-    #  Calculate IoU components separately for faults and lava.
-
-    for class_idx in range(2):
-
-
+    # Calculate IoU components for lava.
+    for class_idx in range(1):
 
         pred_class = predicted_binary[:, class_idx]
-
         true_class = true_binary[:, class_idx]
 
-
-
-        #  Pixels correctly predicted as belonging to this class.
-
+        # Pixels correctly predicted as lava.
         intersections[class_idx] = (
-
             pred_class & true_class
-
         ).sum()
 
-
-
-        #  Pixels predicted or labelled as belonging to this class.
-
+        # Pixels predicted or labelled as lava.
         unions[class_idx] = (
-
             pred_class | true_class
-
         ).sum()
-
-
 
     return intersections, unions
 
 
 
 #  ==========================================================
-
 #  BINARY DICE LOSS
-
 #  ==========================================================
 
-
-
 def dice_loss_binary(logits, targets, eps=1e-6):
+    """
+    Calculate Dice loss for lava.
 
+    Channel 0 = Lava
+
+    logits:  [B, 1, H, W]
+    targets: [B, 1, H, W]
     """
 
-    Calculate Dice loss independently for faults and lava.
-
-
-
-    Channel 0 = Faults
-
-    Channel 1 = Lava
-
-
-
-    logits:  [B, 2, H, W]
-
-    targets: [B, 2, H, W]
-
-    """
-
-
-
-    #  Convert logits into independent probabilities.
-
+    # Convert logits into probabilities.
     probs = torch.sigmoid(logits)
 
-
-
-    #  Sum over batch and spatial dimensions,
-
-    #  keeping the two foreground classes separate.
-
+    # Sum over batch and spatial dimensions.
     dims = (0, 2, 3)
 
-
-
-    #  Calculate intersection for each foreground class.
-
+    # Calculate intersection for lava.
     intersection = torch.sum(probs * targets, dim=dims)
 
-
-
-    #  Calculate total predicted and ground-truth values.
-
+    # Calculate total predicted and ground-truth values.
     denominator = torch.sum(probs + targets, dim=dims)
 
-
-
-    #  Calculate Dice for faults and lava independently.
-
+    # Calculate Dice for lava.
     dice_per_class = (
-
         (2.0 * intersection + eps)
-
         / (denominator + eps)
-
     )
 
-
-
-    #  Average the two foreground Dice losses.
-
+    # Return lava Dice loss.
     return 1.0 - dice_per_class.mean()
 
 
 
-
-
 #  ==========================================================
-
 #  VALIDATION FUNCTION
-
 #  ==========================================================
-
-
 
 def evaluate(model, data_loader, criterion_bce):
-
     """
-
     Evaluate the model on the validation dataset.
 
-
-
-    Channel 0 = Faults
-
-    Channel 1 = Lava
-
-
+    Channel 0 = Lava
 
     Returns:
-
         average_loss
-
-        average_iou: [faults_iou, lava_iou]
-
+        average_iou: [lava_iou]
     """
 
-
-
-    #  Put the model into evaluation mode.
-
+    # Put the model into evaluation mode.
     model.eval()
 
-
-
-    #  Accumulate validation loss across all batches.
-
+    # Accumulate validation loss across all batches.
     running_loss = 0.0
 
+    # Store intersection and union for lava.
+    total_intersection = torch.zeros(1, device=device)
+    total_union = torch.zeros(1, device=device)
 
-
-    #  Store intersection and union for both foreground classes.
-
-    total_intersection = torch.zeros(2, device=device)
-
-    total_union = torch.zeros(2, device=device)
-
-
-
-    #  Disable gradient calculations during validation.
-
+    # Disable gradient calculations during validation.
     with torch.no_grad():
-
-
 
         for images, masks, filenames in data_loader:
 
-
-
-            #  Move images and masks to the selected device.
-
+            # Move images and masks to the selected device.
             images = images.to(device)
-
             masks = masks.to(device)
 
-
-
-            #  Generate raw model predictions.
-
+            # Generate raw model predictions.
             predictions = model(images)
 
-
-
-            #  Calculate binary cross-entropy loss.
-
+            # Calculate binary cross-entropy loss.
             bce_loss = criterion_bce(predictions, masks)
 
-
-
-            #  Calculate binary Dice loss.
-
+            # Calculate binary Dice loss.
             d_loss = dice_loss_binary(predictions, masks)
 
-
-
-            #  Combine the two loss components.
-
+            # Combine the two loss components.
             loss = bce_loss + d_loss
 
-
-
-            #  Accumulate validation loss.
-
+            # Accumulate validation loss.
             running_loss += loss.item()
 
-
-
-            #  Calculate intersection and union for faults and lava.
-
+            # Calculate intersection and union for lava.
             batch_intersection, batch_union = calculate_intersection_union(
-
                 predictions,
-
                 masks,
-
                 threshold=0.5
-
             )
 
-
-
-            #  Accumulate results across the validation dataset.
-
+            # Accumulate results across the validation dataset.
             total_intersection += batch_intersection
-
             total_union += batch_union
 
-
-
-    #  Calculate average validation loss.
-
+    # Calculate average validation loss.
     average_loss = running_loss / len(data_loader)
 
-
-
-    #  Calculate IoU independently for faults and lava.
-
-    #  A class with no predicted or labelled pixels is assigned NaN.
-
+    # Calculate IoU for lava.
+    # If there are no predicted or labelled lava pixels, assign NaN.
     average_iou = torch.where(
-
         total_union > 0,
-
         total_intersection / total_union.clamp(min=1),
-
         torch.full_like(total_union, float("nan"))
-
     )
 
-
-
     return average_loss, average_iou
-
-
-
-
 
 #  ==========================================================
 
@@ -968,7 +755,7 @@ summary_sheet["B6"] = LEARNING_RATE
 
 summary_sheet["A7"] = "Number of output channels"
 
-summary_sheet["B7"] = 2
+summary_sheet["B7"] = 1
 
 
 
@@ -1063,20 +850,13 @@ summary_sheet["B21"] = str(RUN_MODEL_PATH)
 #  Record the class-index definitions used by the model.
 
 summary_sheet["A23"] = "Output channel 0"
-
-summary_sheet["B23"] = "Faults"
-
-
+summary_sheet["B23"] = "Lava"
 
 summary_sheet["A24"] = "Output channel 1"
-
-summary_sheet["B24"] = "Lava"
-
-
+summary_sheet["B24"] = "Not used"
 
 summary_sheet["A25"] = "Background handling"
-
-summary_sheet["B25"] = "Neither foreground output exceeds threshold"
+summary_sheet["B25"] = "Lava probability below threshold"
 
 # Two-pass training and input-channel settings.
 summary_sheet["A26"] = "Input channels"
@@ -1122,25 +902,13 @@ history_sheet = workbook.create_sheet("Epoch History")
 #  Define the information recorded after each epoch.
 
 history_headers = [
-
     "Epoch",
-
     "Train Loss",
-
     "Validation Loss",
-
-    "Faults IoU",
-
     "Lava IoU",
-
-    "Mean Foreground IoU",
-
     "Learning Rate",
-
-    "Best Mean FG IoU",
-
+    "Best Lava IoU",
     "Checkpoint Saved"
-
 ]
 
 #  Add and format the column headings.
@@ -1257,8 +1025,6 @@ model = UNet().to(device)
 
 #  Channel 0 = Faults
 
-#  Channel 1 = Lava
-
 #
 
 #  These weights control the contribution of positive pixels
@@ -1283,7 +1049,7 @@ pos_weights = torch.tensor(
 
 #  [batch, channel, height, width]
 
-pos_weights = pos_weights.view(1, 2, 1, 1)
+pos_weights = pos_weights.view(1, 1, 1, 1)
 
 
 
@@ -1341,7 +1107,7 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 
 
-#  ReduceLROnPlateau monitors mean foreground IoU.
+#  ReduceLROnPlateau monitors lava IoU.
 
 #
 
@@ -1379,7 +1145,7 @@ scheduler = ReduceLROnPlateau(
 
 
 
-#  Track the best mean foreground IoU seen so far.
+#  Track the best lava IoU seen so far.
 
 #
 
@@ -1471,21 +1237,15 @@ if RESUME_TRAINING and os.path.exists(MODEL_PATH):
 
 
 
-        #  Extract IoU for the two foreground channels.
+        #  Extract IoU for lava.
+        #
+        #  Channel 0 = Lava
 
-        #  Channel 0 = Faults
+        lava_iou = best_val_iou[0].item()
 
-        #  Channel 1 = Lava
+        #  Use lava IoU as the validation score.
 
-        faults_iou = best_val_iou[0].item()
-
-        lava_iou = best_val_iou[1].item()
-
-
-
-        #  Calculate mean foreground IoU.
-
-        best_val_score = (faults_iou + lava_iou) / 2.0
+        best_val_score = lava_iou
 
 
 
@@ -1587,38 +1347,24 @@ for epoch in range(NUM_EPOCHS):
 
 
 
-    #  Extract IoU for the two foreground classes.
+    #  Extract IoU for lava.
+    #
+    #  Channel 0 = Lava
 
-    #  Channel 0 = Faults
+    lava_iou = average_val_iou[0].item()
 
-    #  Channel 1 = Lava
+    #  Check that lava IoU is defined.
 
-    faults_iou = average_val_iou[0].item()
-
-    lava_iou = average_val_iou[1].item()
-
-
-
-    #  Calculate mean IoU across classes with defined scores.
-
-    valid_iou = average_val_iou[~torch.isnan(average_val_iou)]
-
-
-
-    if valid_iou.numel() == 0:
+    if torch.isnan(average_val_iou[0]):
 
         raise ValueError(
-
-            "Validation IoU is undefined for both foreground classes. "
-
+            "Validation IoU is undefined for lava. "
             "Check the validation dataset and predictions."
-
         )
 
+    #  Use lava IoU as the validation score.
 
-
-    mean_foreground_iou = valid_iou.mean().item()
-
+    mean_foreground_iou = lava_iou
 
 
 
@@ -1631,8 +1377,7 @@ for epoch in range(NUM_EPOCHS):
 
 
 
-    #  Give the current mean foreground IoU to the learning-rate
-
+    #  Give the current lava IoU to the learning-rate
     #  scheduler.
 
     scheduler.step(mean_foreground_iou)
@@ -1649,8 +1394,7 @@ for epoch in range(NUM_EPOCHS):
 
 
 
-    #  Save a new checkpoint whenever the current mean foreground
-
+    #  Save a new checkpoint whenever the current lava
     #  IoU exceeds the best score previously observed.
 
     if mean_foreground_iou > best_val_score:
@@ -1717,8 +1461,7 @@ for epoch in range(NUM_EPOCHS):
 
 
 
-        print(f"Saved new best model with mean foreground IoU: {best_val_score:.6f}")
-
+        print(f"Saved new best model with lava IoU: {best_val_score:.6f}")
 
 
     else:
@@ -1749,31 +1492,20 @@ for epoch in range(NUM_EPOCHS):
 
 
 
-   #  Record the epoch metrics.
+    #  Record the epoch metrics.
 
     history_sheet.cell(row=history_row, column=1, value=epoch + 1)
-
     history_sheet.cell(row=history_row, column=2, value=average_train_loss)
-
     history_sheet.cell(row=history_row, column=3, value=average_val_loss)
-
-    history_sheet.cell(row=history_row, column=4, value=faults_iou)
-
-    history_sheet.cell(row=history_row, column=5, value=lava_iou)
-
-    history_sheet.cell(row=history_row, column=6, value=mean_foreground_iou)
-
-    history_sheet.cell(row=history_row, column=7, value=current_lr)
-
-    history_sheet.cell(row=history_row, column=8, value=best_val_score)
-
-    history_sheet.cell(row=history_row, column=9, value=checkpoint_saved)
-
+    history_sheet.cell(row=history_row, column=4, value=lava_iou)
+    history_sheet.cell(row=history_row, column=5, value=current_lr)
+    history_sheet.cell(row=history_row, column=6, value=best_val_score)
+    history_sheet.cell(row=history_row, column=7, value=checkpoint_saved)
 
 
     #  Format numerical metrics to six decimal places.
 
-    for column in range(2, 9):
+    for column in range(2, 7):
 
         history_sheet.cell(
 
@@ -1810,19 +1542,9 @@ for epoch in range(NUM_EPOCHS):
     #  Display the results from the completed epoch.
 
     print(
-
         f"Epoch {epoch + 1}/{NUM_EPOCHS}\n"
-
         f"Train loss:      {average_train_loss:.6f}\n"
-
         f"Val loss:        {average_val_loss:.6f}\n"
-
-        f"Faults IoU:      {faults_iou:.6f}\n"
-
         f"Lava IoU:        {lava_iou:.6f}\n"
-
-        f"Mean FG IoU:     {mean_foreground_iou:.6f}\n"
-
         f"Learning rate:   {current_lr:.2e}\n"
-
     )

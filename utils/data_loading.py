@@ -35,16 +35,14 @@ SEGMENTATION MASKS
 
 Masks stored on disk contain:
 
-    0   = Background
-    128 = Faults
+    0   = Everything else
     255 = Lava
 
-These are converted into two independent binary channels:
+These are converted into one binary channel:
 
-    Channel 0 = Faults
-    Channel 1 = Lava
+    Channel 0 = Lava
 
-Background pixels have a value of zero in both channels.
+Non-lava pixels have a value of zero.
 
 DATA AUGMENTATION
 -----------------
@@ -257,31 +255,25 @@ class LavaFlowDataset(Dataset):
 
         # Masks stored on disk contain:
         #
-        # 0   = Background
-        # 128 = Faults
+        # 0   = Everything else
         # 255 = Lava
         #
-        # Create two independent binary targets.
+        # Create one binary target.
         #
-        # Channel 0 = Faults
-        # Channel 1 = Lava
+        # Channel 0 = Lava
         #
-        # Background pixels have zero in both channels.
-
-        fault_mask = (
-            mask == 128
-        ).astype(np.float32)
+        # All non-lava pixels have a value of zero.
 
         lava_mask = (
             mask == 255
         ).astype(np.float32)
 
-        # Combine the two masks into an array with shape:
+        # Add a channel dimension to produce:
         #
-        # [2, height, width]
+        # [1, height, width]
 
-        binary_masks = np.stack(
-            [fault_mask, lava_mask],
+        binary_masks = np.expand_dims(
+            lava_mask,
             axis=0
         )
 
@@ -427,10 +419,10 @@ class LavaFlowDataset(Dataset):
         # Return:
         #
         # image:
-        #     [2, height, width]
+        #     [1, height, width]
         #
         # mask:
-        #     [2, height, width]
+        #     [1, height, width]
         #
         # filename:
         #     Original SAR tile filename

@@ -63,7 +63,7 @@ class UNet(nn.Module):
         # Reduce the final 64 feature maps down to a single output channel.
         # The output contains one value for every pixel in the image.
 
-        self.outc = OutConv(64, 2)
+        self.outc = OutConv(64, 1)
 
     def forward(self, x):
 
