@@ -174,7 +174,7 @@ MODEL_PATH = "unet_lava_best.pth"
 #
 #  Channel 0 = Lava
 #
-#  This is an initial value, not a calculated class weight.
+#  This is an initial value, npythonot a calculated class weight.
 #  We will assess class imbalance before selecting the final weight.
 
 POS_WEIGHTS = [1.4]
