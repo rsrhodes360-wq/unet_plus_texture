@@ -174,7 +174,7 @@ import matplotlib.pyplot as plt
 
 #  optimisation step.
 
-BATCH_SIZE = 8
+BATCH_SIZE = 32
 
 
 

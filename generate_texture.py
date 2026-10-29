@@ -40,10 +40,7 @@ from scipy.ndimage import uniform_filter
 INPUT_FOLDER = Path("data/raw/images")
 OUTPUT_FOLDER = Path("data/raw/texture")
 
-TRAINING_IMAGE = "training_image.tif"
-VALIDATION_IMAGE = "validation_image.tif"
-TESTING_IMAGE = "testing_image.tif"
-
+from config import TRAINING_IMAGE, VALIDATION_IMAGE, TESTING_IMAGE
 KERNEL_SIZE = 21
 
 # Reflect values at image boundaries when calculating

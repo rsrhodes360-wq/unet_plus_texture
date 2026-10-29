@@ -70,6 +70,8 @@ from shapely.geometry import LineString
 
 from matplotlib.colors import ListedColormap
 
+from datetime import datetime
+
 
 # ==========================================================
 # TILE POSITION FUNCTION
@@ -221,8 +223,9 @@ TEST_DATASET = "testing"
 #
 # Used to determine reconstruction dimensions and
 # retrieve the original GeoTIFF georeferencing.
+# Filename is defined in config.py.
 
-TEST_IMAGE = "testing_image.tif"
+from config import TESTING_IMAGE as TEST_IMAGE
 
 
 # Folder for georeferenced shapefiles.
@@ -1275,6 +1278,171 @@ plt.tight_layout()
 plt.show()
 
 
+
+# ==========================================================
+# PREPARE OUTPUT ARRAYS
+# ==========================================================
+
+test_image_name = Path(TEST_IMAGE).stem
+
+evaluation_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+final_mask_np = final_mask.cpu().numpy().astype(np.uint8)
+
+fault_probability_np = (
+    average_probability[0].cpu().numpy().astype(np.float32)
+)
+
+lava_probability_np = (
+    average_probability[1].cpu().numpy().astype(np.float32)
+)
+
+
+# ==========================================================
+# SAVE FINAL SEGMENTATION GEOTIFF
+# ==========================================================
+
+if crs is not None and transform is not None:
+
+    segmentation_tif_path = (
+        RUN_FOLDER
+        / f"{test_image_name}_{evaluation_timestamp}_predicted_segmentation.tif"
+    )
+
+    with rasterio.open(
+        segmentation_tif_path,
+        "w",
+        driver="GTiff",
+        height=image_height,
+        width=image_width,
+        count=1,
+        dtype="uint8",
+        crs=crs,
+        transform=transform,
+        compress="lzw",
+    ) as dst:
+
+        dst.write(final_mask_np, 1)
+
+    print(f"Saved segmentation GeoTIFF: {segmentation_tif_path}")
+
+else:
+    print("No CRS or transform found, skipping GeoTIFF export.")
+
+
+# ==========================================================
+# SAVE FINAL SEGMENTATION PNG
+# ==========================================================
+
+segmentation_png_path = (
+    RUN_FOLDER
+    / f"{test_image_name}_{evaluation_timestamp}_predicted_segmentation_mask.png"
+)
+
+plt.imsave(
+    segmentation_png_path,
+    final_mask_np,
+    cmap=class_cmap,
+    vmin=0,
+    vmax=2,
+)
+
+print(f"Saved segmentation PNG: {segmentation_png_path}")
+
+
+# ==========================================================
+# SAVE FULL-RESOLUTION PROBABILITY MAPS
+# ==========================================================
+
+probability_maps = {
+    "fault": fault_probability_np,
+    "lava": lava_probability_np,
+}
+
+for class_name, probability_map in probability_maps.items():
+
+    # ------------------------------------------------------
+    # SAVE PNG
+    # ------------------------------------------------------
+
+    png_path = (
+        RUN_FOLDER
+        / f"{test_image_name}_{evaluation_timestamp}_{class_name}_probability.png"
+    )
+
+    plt.imsave(
+        png_path,
+        probability_map,
+        cmap="seismic",
+        vmin=0,
+        vmax=1,
+    )
+
+    print(f"Saved probability PNG: {png_path}")
+
+    # ------------------------------------------------------
+    # SAVE FLOAT32 GEOTIFF
+    # ------------------------------------------------------
+
+    if crs is not None and transform is not None:
+
+        tif_path = (
+            RUN_FOLDER
+            / f"{test_image_name}_{evaluation_timestamp}_{class_name}_probability.tif"
+        )
+
+        with rasterio.open(
+            tif_path,
+            "w",
+            driver="GTiff",
+            height=image_height,
+            width=image_width,
+            count=1,
+            dtype="float32",
+            crs=crs,
+            transform=transform,
+            compress="lzw",
+        ) as dst:
+
+            dst.write(probability_map, 1)
+
+        print(f"Saved probability GeoTIFF: {tif_path}")
+
+
+# ==========================================================
+# NORMALISE ORIGINAL SAR IMAGE FOR DISPLAY
+# ==========================================================
+
+sar_image = np.asarray(original_image, dtype=np.float32)
+
+valid_pixels = np.isfinite(sar_image)
+
+if np.any(valid_pixels):
+
+    sar_mean = np.mean(sar_image[valid_pixels])
+    sar_std = np.std(sar_image[valid_pixels])
+
+    lower_limit = sar_mean - 2.0 * sar_std
+    upper_limit = sar_mean + 2.0 * sar_std
+
+    if upper_limit > lower_limit:
+
+        sar_normalised = np.clip(
+            (sar_image - lower_limit)
+            / (upper_limit - lower_limit),
+            0,
+            1,
+        )
+
+    else:
+        sar_normalised = np.zeros_like(sar_image)
+
+else:
+    sar_normalised = np.zeros_like(sar_image)
+
+sar_normalised[~valid_pixels] = 0
+
+
 # ==========================================================
 # CREATE SEGMENTATION OVERLAY
 # ==========================================================
@@ -1284,21 +1452,21 @@ fig, ax = plt.subplots(
 )
 
 ax.imshow(
-    original_image,
-    cmap="gray"
+    sar_normalised,
+    cmap="gray",
+    vmin=0,
+    vmax=1,
 )
-
-final_mask_np = final_mask.numpy()
 
 overlay = np.zeros(
     (image_height, image_width, 4),
-    dtype=np.float32
+    dtype=np.float32,
 )
 
 
-# ----------------------------------------------------------
-# FAULTS
-# ----------------------------------------------------------
+# ==========================================================
+# FAULT OVERLAY
+# ==========================================================
 
 fault_pixels = final_mask_np == 1
 
@@ -1306,13 +1474,13 @@ overlay[fault_pixels] = [
     0.0,
     0.4,
     1.0,
-    0.45
+    0.45,
 ]
 
 
-# ----------------------------------------------------------
-# LAVA
-# ----------------------------------------------------------
+# ==========================================================
+# LAVA OVERLAY
+# ==========================================================
 
 lava_pixels = final_mask_np == 2
 
@@ -1320,16 +1488,17 @@ overlay[lava_pixels] = [
     1.0,
     0.0,
     0.0,
-    0.45
+    0.45,
 ]
 
-# Background remains transparent.
+
+# ==========================================================
+# DISPLAY OVERLAY
+# ==========================================================
 
 ax.imshow(overlay)
 
-ax.set_title(
-    "Predicted segmentation"
-)
+ax.set_title("Predicted segmentation")
 
 ax.axis("off")
 
@@ -1337,29 +1506,24 @@ plt.tight_layout()
 
 
 # ==========================================================
-# SAVE SEGMENTATION IMAGE
+# SAVE SEGMENTATION OVERLAY PNG
 # ==========================================================
-
-test_image_name = Path(
-    TEST_IMAGE
-).stem
 
 output_image_path = (
     RUN_FOLDER
-    / f"{test_image_name}_predicted_segmentation.png"
+    / f"{test_image_name}_{evaluation_timestamp}_predicted_segmentation.png"
 )
 
 fig.savefig(
     output_image_path,
     dpi=300,
-    bbox_inches="tight"
+    bbox_inches="tight",
 )
 
-print(
-    f"Saved segmentation image: {output_image_path}"
-)
+print(f"Saved segmentation overlay: {output_image_path}")
 
 plt.show()
+
 
 
 # ==========================================================

@@ -77,37 +77,19 @@ STRIDE = int(TILE_SIZE * (1 - OVERLAP))
 # DATASETS
 # ==========================================================
 
-# Training area
+# Dataset filenames are defined in config.py.
 
-TRAINING_IMAGE = "training_image.tif"
-TRAINING_TEXTURE = "training_image_texture.tif"
-TRAINING_MASK = "training_mask.tif"
-
-
-# Optional second training area
-#
-# Uncomment these settings and the corresponding section
-# in main() if a second training area is required.
-
-'''
-TRAINING_IMAGE_2 = "training_image_2.tif"
-TRAINING_TEXTURE_2 = "training_image_2_texture.tif"
-TRAINING_MASK_2 = "training_mask_2.tif"
-'''
-
-
-# Validation area
-
-VALIDATION_IMAGE = "validation_image.tif"
-VALIDATION_TEXTURE = "validation_image_texture.tif"
-VALIDATION_MASK = "validation_mask.tif"
-
-
-# Testing area
-
-TESTING_IMAGE = "testing_image.tif"
-TESTING_TEXTURE = "testing_image_texture.tif"
-TESTING_MASK = None
+from config import (
+    TRAINING_IMAGE,
+    TRAINING_TEXTURE,
+    TRAINING_MASK,
+    VALIDATION_IMAGE,
+    VALIDATION_TEXTURE,
+    VALIDATION_MASK,
+    TESTING_IMAGE,
+    TESTING_TEXTURE,
+    TESTING_MASK,
+)
 
 
 # ==========================================================
