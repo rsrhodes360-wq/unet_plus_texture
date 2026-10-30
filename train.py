@@ -177,7 +177,7 @@ MODEL_PATH = "unet_lava_best.pth"
 #  This is an initial value, npythonot a calculated class weight.
 #  We will assess class imbalance before selecting the final weight.
 
-POS_WEIGHTS = [1.4]
+POS_WEIGHTS = [1.3]
 
 
 
@@ -190,7 +190,7 @@ POS_WEIGHTS = [1.4]
 #  Augmentation is not applied to the validation dataset.
 
 USE_AUGMENTATION = True
-USE_BRIGHTNESS_AUGMENTATION = False
+USE_BRIGHTNESS_AUGMENTATION = True
 
 
 

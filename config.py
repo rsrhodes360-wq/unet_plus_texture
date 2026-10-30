@@ -23,3 +23,21 @@ TESTING_TEXTURE = "testing_image2_texture.tif"
 TESTING_MASK = "testing_mask2.tif"
 
 
+# ==========================================================
+# ADDITIONAL TRAINING AREAS
+# ==========================================================
+
+NEW_TRAINING_IMAGES = [
+    "training_image2.tif",
+    
+]
+
+NEW_TRAINING_TEXTURES = [
+    "training_image2_texture.tif",
+    
+]
+
+NEW_TRAINING_MASKS = [
+    "training_mask2.tif",
+    
+]

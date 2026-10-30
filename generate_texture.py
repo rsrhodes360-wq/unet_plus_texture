@@ -40,7 +40,12 @@ from scipy.ndimage import uniform_filter
 INPUT_FOLDER = Path("data/raw/images")
 OUTPUT_FOLDER = Path("data/raw/texture")
 
-from config import TRAINING_IMAGE, VALIDATION_IMAGE, TESTING_IMAGE
+from config import (
+    TRAINING_IMAGE,
+    VALIDATION_IMAGE,
+    TESTING_IMAGE,
+    NEW_TRAINING_IMAGES,
+)
 KERNEL_SIZE = 21
 
 # Reflect values at image boundaries when calculating
@@ -223,6 +228,11 @@ def main():
         ("validation", VALIDATION_IMAGE),
         ("testing", TESTING_IMAGE),
     ]
+
+    for i, image_name in enumerate(NEW_TRAINING_IMAGES, start=1):
+        datasets.append(
+            (f"additional training {i}", image_name)
+        )
 
     selected = []
 

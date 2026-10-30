@@ -89,8 +89,10 @@ from config import (
     TESTING_IMAGE,
     TESTING_TEXTURE,
     TESTING_MASK,
+    NEW_TRAINING_IMAGES,
+    NEW_TRAINING_TEXTURES,
+    NEW_TRAINING_MASKS,
 )
-
 
 # ==========================================================
 # CREATE REQUIRED INPUT FOLDERS
@@ -718,6 +720,49 @@ def main():
             start_index=next_training_index
         )
         '''
+
+        # --------------------------------------------------
+        # ADDITIONAL TRAINING AREAS
+        # --------------------------------------------------
+
+        # Check that each training image has a corresponding
+        # texture map and segmentation mask.
+
+        if not (
+            len(NEW_TRAINING_IMAGES)
+            == len(NEW_TRAINING_TEXTURES)
+            == len(NEW_TRAINING_MASKS)
+        ):
+            raise ValueError(
+                "Additional training image, texture and mask "
+                "lists must have the same length."
+            )
+
+        # Process each additional training area.
+
+        for image_name, texture_name, mask_name in zip(
+            NEW_TRAINING_IMAGES,
+            NEW_TRAINING_TEXTURES,
+            NEW_TRAINING_MASKS
+        ):
+
+            # Find the next unused tile number.
+
+            next_training_index = get_next_tile_index(
+                "training"
+            )
+
+            # Append the new training area to the
+            # existing training dataset.
+
+            process_dataset(
+                image_name=image_name,
+                texture_name=texture_name,
+                mask_name=mask_name,
+                output_folder="training",
+                start_index=next_training_index
+            )
+
 
     else:
 
