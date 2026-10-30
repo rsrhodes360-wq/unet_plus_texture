@@ -94,7 +94,8 @@ class LavaFlowDataset(Dataset):
         images_dir,
         masks_dir,
         texture_dir,
-        augment=False
+        augment=False,
+        brightness_augment=False
     ):
 
         # Store the locations of the image, mask and
@@ -110,7 +111,7 @@ class LavaFlowDataset(Dataset):
         # Validation and testing can use augment=False.
 
         self.augment = augment
-
+        self.brightness_augment = brightness_augment
         # Find every PNG image in the image folder.
         #
         # Sorting preserves the original dataset ordering.
@@ -393,6 +394,8 @@ class LavaFlowDataset(Dataset):
             #
             # The multiplier is randomly sampled from
             # a uniform distribution between 0.7 and 1.3.
+
+        if self.brightness_augment:
 
             if torch.rand(1).item() < 0.5:
 

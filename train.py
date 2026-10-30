@@ -190,6 +190,7 @@ POS_WEIGHTS = [1.4]
 #  Augmentation is not applied to the validation dataset.
 
 USE_AUGMENTATION = True
+USE_BRIGHTNESS_AUGMENTATION = False
 
 
 

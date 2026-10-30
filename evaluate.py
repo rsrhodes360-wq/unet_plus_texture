@@ -736,7 +736,7 @@ if has_masks:
 
     faults_dice = test_dice[0].item()
 
-    lava_dice = test_dice[1].item()
+    lava_dice = test_dice[0].item()
 
     valid_dice = test_dice[
         ~torch.isnan(test_dice)

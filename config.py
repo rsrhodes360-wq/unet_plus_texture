@@ -18,8 +18,8 @@ VALIDATION_MASK = "validation_mask.tif"
 
 # Testing area
 
-TESTING_IMAGE = "testing_image.tif"
-TESTING_TEXTURE = "testing_image_texture.tif"
-TESTING_MASK = "testing_mask.tif"
+TESTING_IMAGE = "testing_image2.tif"
+TESTING_TEXTURE = "testing_image2_texture.tif"
+TESTING_MASK = "testing_mask2.tif"
 
 
