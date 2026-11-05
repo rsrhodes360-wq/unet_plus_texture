@@ -244,7 +244,7 @@ TEST_BATCH_SIZE = 32
 
 # Saved model checkpoint.
 
-MODEL_PATH = Path("unet_lava_best.pth")
+MODEL_PATH = Path("unet_lava_bright_aug_on_best.pth")
 
 
 # Independent foreground probability thresholds.

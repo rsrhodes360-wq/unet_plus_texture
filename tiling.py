@@ -385,7 +385,8 @@ def save_tile(
     texture_tile,
     mask_tile,
     filename,
-    output_folder
+    output_folder,
+    sar_nodata
 ):
 
     """
@@ -409,9 +410,31 @@ def save_tile(
     # SAVE SAR IMAGE TILE
     # ------------------------------------------------------
 
-    image_tile.save(
-        base_folder / "images" / filename
+    sar_filename = Path(filename).stem + ".tif"
+
+    sar_path = (
+        base_folder
+        / "images"
+        / sar_filename
     )
+
+    sar_array = np.asarray(
+        image_tile,
+        dtype=np.uint8
+    )
+
+    with rasterio.open(
+        sar_path,
+        "w",
+        driver="GTiff",
+        height=sar_array.shape[0],
+        width=sar_array.shape[1],
+        count=1,
+        dtype="uint8",
+        nodata=sar_nodata
+    ) as dst:
+
+        dst.write(sar_array, 1)
 
     # ------------------------------------------------------
     # SAVE TEXTURE TILE
@@ -487,6 +510,14 @@ def process_dataset(
         texture_name,
         mask_name
     )
+
+    image_path = IMAGE_FOLDER / image_name
+
+    if image_path.suffix.lower() in [".tif", ".tiff"]:
+        with rasterio.open(image_path) as src:
+            sar_nodata = src.nodata
+    else:
+        sar_nodata = None
 
     # ------------------------------------------------------
     # CALCULATE TILE POSITIONS
@@ -570,7 +601,8 @@ def process_dataset(
                 texture_tile,
                 mask_tile,
                 filename,
-                output_folder
+                output_folder,
+                sar_nodata
             )
 
             tile_count += 1
@@ -611,7 +643,7 @@ def get_next_tile_index(output_folder):
 
     max_index = -1
 
-    for file in images_folder.glob("tile_*.png"):
+    for file in images_folder.glob("tile_*.tif"):
 
         stem = file.stem
 
