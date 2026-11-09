@@ -343,6 +343,7 @@ print("=" * 60)
 print()
 #  Ask whether the training dataset has changed since the previous run.
 #
+'''
 #  Changes to the dataset can alter the class distribution and may
 #  therefore require the class weights to be recalculated.
 dataset_changed = input(
@@ -373,6 +374,8 @@ confirmation = input(
 if confirmation != "y":
     print("Training cancelled.")
     raise SystemExit
+
+'''
 #  ==========================================================
 #  CREATE EXCEL TRAINING LOG
 #  ==========================================================
