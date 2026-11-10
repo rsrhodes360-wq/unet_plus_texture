@@ -210,18 +210,72 @@ def export_contour_shapefile(
 # EVALUATION SETTINGS
 # ==========================================================
 
-# Folder containing the tiled testing dataset.
+from config import (
+    TESTING,
+    TESTING_IMAGE,
+    NEW_TESTING_IMAGES,
+)
 
-TEST_DATASET = "testing"
+# Combine the original and additional testing images.
 
+testing_images = [
+    TESTING_IMAGE,
+    *NEW_TESTING_IMAGES,
+]
 
-# Original untiled testing image.
-#
-# Used to determine reconstruction dimensions and
-# retrieve the original GeoTIFF georeferencing.
-# Filename is defined in config.py.
+# Identify each area from its original image filename.
 
-from config import TESTING_IMAGE as TEST_IMAGE
+testing_area_images = {}
+
+for image_name in testing_images:
+
+    stem = Path(image_name).stem
+    prefix = "testing_image"
+
+    if not stem.startswith(prefix):
+        raise ValueError(
+            f"Invalid testing image filename: {image_name}"
+        )
+
+    number = stem[len(prefix):]
+
+    if number == "":
+        area_number = 1
+    elif number.isdigit() and int(number) >= 1:
+        area_number = int(number)
+    else:
+        raise ValueError(
+            f"Invalid testing area number: {image_name}"
+        )
+
+    area_name = f"area{area_number}"
+
+    if area_name in testing_area_images:
+        raise ValueError(
+            f"Duplicate testing area: {area_name}"
+        )
+
+    testing_area_images[area_name] = image_name
+
+# Check that the selected testing area exists.
+
+if TESTING not in testing_area_images:
+    raise ValueError(
+        f"Testing area '{TESTING}' is not defined in config.py. "
+        f"Available areas: {list(testing_area_images)}"
+    )
+
+# Folder containing the selected testing area's tiles.
+
+TEST_DATASET = f"testing/{TESTING}"
+
+# Original untiled SAR image used for reconstruction
+# dimensions and georeferencing.
+
+TEST_IMAGE = testing_area_images[TESTING]
+
+print(f"Selected testing area: {TESTING}")
+print(f"Original testing image: {TEST_IMAGE}")
 
 
 # Folder for georeferenced shapefiles.

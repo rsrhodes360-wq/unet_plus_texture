@@ -95,6 +95,9 @@ from config import (
     NEW_VALIDATION_IMAGES,
     NEW_VALIDATION_TEXTURES,
     NEW_VALIDATION_MASKS,
+    NEW_TESTING_IMAGES,
+    NEW_TESTING_TEXTURES,
+    NEW_TESTING_MASKS,
 )
 
 # ==========================================================
@@ -490,6 +493,43 @@ def get_validation_area_number(image_name):
     if not number.isdigit() or int(number) < 1:
         raise ValueError(
             f"Cannot identify validation area from: {image_name}"
+        )
+
+    return int(number)
+
+
+# ==========================================================
+# IDENTIFY TESTING AREA
+# ==========================================================
+
+def get_testing_area_number(image_name):
+
+    """
+    Extract the testing area number from the original
+    SAR image filename.
+
+    testing_image.tif  -> 1
+    testing_image2.tif -> 2
+    testing_image3.tif -> 3
+    """
+
+    stem = Path(image_name).stem
+
+    prefix = "testing_image"
+
+    if not stem.startswith(prefix):
+        raise ValueError(
+            f"Invalid testing image filename: {image_name}"
+        )
+
+    number = stem[len(prefix):]
+
+    if number == "":
+        return 1
+
+    if not number.isdigit() or int(number) < 1:
+        raise ValueError(
+            f"Cannot identify testing area from: {image_name}"
         )
 
     return int(number)
@@ -907,15 +947,82 @@ def main():
 
     if tile_testing:
 
-        prepare_output_folder("data/testing")
+        # Check that additional testing lists match.
 
-        process_dataset(
-            image_name=TESTING_IMAGE,
-            texture_name=TESTING_TEXTURE,
-            mask_name=TESTING_MASK,
-            output_folder="testing",
-            start_index=0
+        if not (
+            len(NEW_TESTING_IMAGES)
+            == len(NEW_TESTING_TEXTURES)
+            == len(NEW_TESTING_MASKS)
+        ):
+            raise ValueError(
+                "Additional testing image, texture and mask "
+                "lists must have the same length."
+            )
+
+        # Combine original and additional testing areas.
+
+        testing_areas = [
+            (
+                TESTING_IMAGE,
+                TESTING_TEXTURE,
+                TESTING_MASK
+            )
+        ]
+
+        testing_areas.extend(
+            zip(
+                NEW_TESTING_IMAGES,
+                NEW_TESTING_TEXTURES,
+                NEW_TESTING_MASKS
+            )
         )
+
+        # Check for duplicate testing area numbers.
+
+        area_numbers = [
+            get_testing_area_number(image_name)
+            for image_name, _, _ in testing_areas
+        ]
+
+        if len(area_numbers) != len(set(area_numbers)):
+            raise ValueError(
+                "Duplicate testing area numbers found. "
+                "Check the testing image filenames in config.py."
+            )
+
+        # Ask which testing areas to tile individually.
+
+        for image_name, texture_name, mask_name in testing_areas:
+
+            area_number = get_testing_area_number(image_name)
+
+            if not ask_yes_no(
+                f"Do you want to tile testing area {area_number} "
+                f"({image_name})?"
+            ):
+                print(
+                    f"Testing area {area_number} skipped. "
+                    "Existing tiles preserved."
+                )
+                continue
+
+            # Only clear the selected area's folders.
+
+            output_folder = f"testing/area{area_number}"
+
+            prepare_output_folder(
+                Path("data") / output_folder
+            )
+
+            # Tile the selected testing area.
+
+            process_dataset(
+                image_name=image_name,
+                texture_name=texture_name,
+                mask_name=mask_name,
+                output_folder=output_folder,
+                start_index=0
+            )
 
     else:
 
@@ -923,12 +1030,6 @@ def main():
             "\nTesting skipped. "
             "Existing tiles preserved."
         )
-
-    print()
-    print("=" * 50)
-    print("TILING COMPLETE")
-    print("=" * 50)
-
 
 # ==========================================================
 # RUN SCRIPT

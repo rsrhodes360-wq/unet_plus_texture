@@ -46,7 +46,10 @@ from config import (
     TESTING_IMAGE,
     NEW_TRAINING_IMAGES,
     NEW_VALIDATION_IMAGES,
+    NEW_TESTING_IMAGES,
 )
+
+
 KERNEL_SIZE = 21
 
 # Reflect values at image boundaries when calculating
@@ -238,6 +241,11 @@ def main():
     for image_name in NEW_VALIDATION_IMAGES:
         datasets.append(
             (f"additional validation {Path(image_name).stem}", image_name)
+        )
+
+    for image_name in NEW_TESTING_IMAGES:
+        datasets.append(
+            (f"additional testing {Path(image_name).stem}", image_name)
         )
 
     selected = []

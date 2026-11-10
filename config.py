@@ -1,3 +1,13 @@
+
+
+# ==========================================================
+# SELECT TESTING AREA FOR EVALUATION
+# ==========================================================
+
+TESTING = "area1"
+
+
+
 # ==========================================================
 # DATASET FILENAMES
 # ==========================================================
@@ -21,6 +31,8 @@ VALIDATION_MASK = "validation_mask.tif"
 TESTING_IMAGE = "testing_image.tif"
 TESTING_TEXTURE = "testing_image_texture.tif"
 TESTING_MASK = "testing_mask.tif"
+
+
 
 
 # ==========================================================
@@ -79,14 +91,20 @@ NEW_VALIDATION_MASKS = [
 NEW_TESTING_IMAGES = [
     "testing_image2.tif",
     "testing_image3.tif",
+    "testing_image4.tif",
+    "testing_image5.tif",
 ]
 
 NEW_TESTING_TEXTURES = [
     "testing_image2_texture.tif",
     "testing_image3_texture.tif",
+    "testing_image4_texture.tif",
+    "testing_image5_texture.tif",
 ]
 
 NEW_TESTING_MASKS = [
     "testing_mask2.tif",
     "testing_mask3.tif",
+    "testing_mask4.tif",
+    "testing_mask5.tif",
 ]
