@@ -116,8 +116,33 @@ class LavaFlowDataset(Dataset):
         #
         # Sorting preserves the original dataset ordering.
 
-        self.image_files = sorted(
+        all_image_files = sorted(
             self.images_dir.glob("*.png")
+        )
+
+        self.image_files = []
+        skipped_tiles = 0
+
+        for image_path in all_image_files:
+
+            texture_path = (
+                self.texture_dir / f"{image_path.stem}.tif"
+            )
+
+            with rasterio.open(texture_path) as src:
+                texture = src.read(1)
+                texture_valid = src.read_masks(1) > 0
+
+            if not texture_valid.all() or not np.isfinite(texture).all():
+                skipped_tiles += 1
+                continue
+
+            self.image_files.append(image_path)
+
+        print(
+            f"{self.images_dir}: "
+            f"{len(self.image_files)} valid tiles, "
+            f"{skipped_tiles} skipped due to NoData"
         )
 
         # Convert SAR images into PyTorch tensors.
