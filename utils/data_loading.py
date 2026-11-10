@@ -78,6 +78,14 @@ import numpy as np
 import torch
 import rasterio
 
+import warnings
+from rasterio.errors import NotGeoreferencedWarning
+
+warnings.filterwarnings(
+    "ignore",
+    category=NotGeoreferencedWarning
+)
+
 
 # ==========================================================
 # DATASET CLASS
