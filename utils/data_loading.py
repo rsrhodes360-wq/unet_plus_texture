@@ -117,8 +117,9 @@ class LavaFlowDataset(Dataset):
         # Sorting preserves the original dataset ordering.
 
         self.image_files = sorted(
-            self.images_dir.glob("*.tif")
+            self.images_dir.glob("*.png")
         )
+
         # Convert SAR images into PyTorch tensors.
         #
         # ToTensor() scales uint8 pixel values
@@ -151,7 +152,7 @@ class LavaFlowDataset(Dataset):
         # Mask tiles use the same filename as SAR tiles.
 
         mask_path = (
-            self.masks_dir / f"{image_path.stem}.png"
+            self.masks_dir / image_path.name
         )
 
         # Texture tiles use the same filename stem
@@ -167,13 +168,19 @@ class LavaFlowDataset(Dataset):
         # LOAD SAR IMAGE
         # ==================================================
 
-        with rasterio.open(image_path) as src:
-            sar = src.read(1)
-            sar_valid = src.read_masks(1) > 0
+        # Open the SAR image and convert it to greyscale.
 
-        image = torch.from_numpy(
-            sar.astype(np.float32) / 255.0
-        ).unsqueeze(0)
+        image = Image.open(image_path).convert("L")
+
+        # Convert to a float32 PyTorch tensor.
+        #
+        # Pixel values are scaled from 0-255 to 0-1.
+        #
+        # Resulting shape:
+        # [1, height, width]
+
+        image = self.image_transform(image)
+
 
         # ==================================================
         # LOAD TEXTURE MAP
@@ -206,21 +213,6 @@ class LavaFlowDataset(Dataset):
             texture
         ).unsqueeze(0)
 
-        with rasterio.open(texture_path) as src:
-            texture_valid = src.read_masks(1) > 0
-
-        valid_pixels = (
-            sar_valid
-            & texture_valid
-            & np.isfinite(texture.numpy()[0])
-        )
-
-        valid_mask = torch.from_numpy(
-            valid_pixels.astype(np.float32)
-        ).unsqueeze(0)
-
-        image[0, ~valid_mask[0].bool()] = 0.0
-        texture[0, ~valid_mask[0].bool()] = 0.0
 
         # ==================================================
         # COMBINE SAR AND TEXTURE CHANNELS
@@ -340,12 +332,6 @@ class LavaFlowDataset(Dataset):
                 dims=(1, 2)
             )
 
-            valid_mask = torch.rot90(
-                valid_mask,
-                k,
-                dims=(1, 2)
-            )
-
 
             # --------------------------------------------------
             # RANDOM HORIZONTAL FLIP
@@ -370,11 +356,6 @@ class LavaFlowDataset(Dataset):
                     dims=(2,)
                 )
 
-                valid_mask = torch.flip(
-                    valid_mask,
-                    dims=(2,)
-                )
-
 
             # --------------------------------------------------
             # RANDOM VERTICAL FLIP
@@ -396,11 +377,6 @@ class LavaFlowDataset(Dataset):
 
                 mask = torch.flip(
                     mask,
-                    dims=(1,)
-                )
-
-                valid_mask = torch.flip(
-                    valid_mask,
                     dims=(1,)
                 )
 
@@ -454,4 +430,4 @@ class LavaFlowDataset(Dataset):
         # filename:
         #     Original SAR tile filename
 
-        return image, mask, valid_mask, image_path.name
+        return image, mask, image_path.name
