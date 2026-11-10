@@ -138,7 +138,7 @@ import matplotlib.pyplot as plt
 
 #  optimisation step.
 
-BATCH_SIZE = 32
+BATCH_SIZE = 2
 
 
 
@@ -255,7 +255,27 @@ RUN_MODEL_PATH = RUN_FOLDER / "unet_lava_best.pth"
 #  ==========================================================
 
 
+#  ==========================================================
+#  IDENTIFY VALIDATION AREA FROM TILE FILENAME
+#  ==========================================================
 
+def get_validation_area(filename):
+
+    """
+    Extract the validation area identifier from a tile filename.
+
+    area1_tile_0000_x0000_y0000.png -> area1
+    area2_tile_0000_x0000_y0000.png -> area2
+    """
+
+    area = filename.split("_")[0]
+
+    if not area.startswith("area") or not area[4:].isdigit():
+        raise ValueError(
+            f"Invalid validation tile filename: {filename}"
+        )
+
+    return area
 
 
 #  ==========================================================
@@ -354,74 +374,130 @@ def dice_loss_binary(logits, targets, eps=1e-6):
 #  ==========================================================
 
 def evaluate(model, data_loader, criterion_bce):
-    """
-    Evaluate the model on the validation dataset.
 
-    Channel 0 = Lava
+    """
+    Evaluate the model on all validation areas.
 
     Returns:
         average_loss
-        average_iou: [lava_iou]
+        overall_iou
+        area_ious
+        mean_area_iou
     """
 
-    # Put the model into evaluation mode.
     model.eval()
 
-    # Accumulate validation loss across all batches.
     running_loss = 0.0
 
-    # Store intersection and union for lava.
     total_intersection = torch.zeros(1, device=device)
     total_union = torch.zeros(1, device=device)
 
-    # Disable gradient calculations during validation.
+    area_intersections = {}
+    area_unions = {}
+
     with torch.no_grad():
 
         for images, masks, filenames in data_loader:
 
-            # Move images and masks to the selected device.
             images = images.to(device)
             masks = masks.to(device)
 
-            # Generate raw model predictions.
             predictions = model(images)
 
-            # Calculate binary cross-entropy loss.
-            bce_loss = criterion_bce(predictions, masks)
+            # Existing validation loss calculation.
 
-            # Calculate binary Dice loss.
+            bce_loss = criterion_bce(predictions, masks)
             d_loss = dice_loss_binary(predictions, masks)
 
-            # Combine the two loss components.
             loss = bce_loss + d_loss
 
-            # Accumulate validation loss.
             running_loss += loss.item()
 
-            # Calculate intersection and union for lava.
-            batch_intersection, batch_union = calculate_intersection_union(
-                predictions,
-                masks,
-                threshold=0.5
-            )
+            # Calculate intersection and union separately
+            # for each tile.
 
-            # Accumulate results across the validation dataset.
-            total_intersection += batch_intersection
-            total_union += batch_union
+            for i, filename in enumerate(filenames):
 
-    # Calculate average validation loss.
+                area = get_validation_area(filename)
+
+                intersection, union = calculate_intersection_union(
+                    predictions[i:i + 1],
+                    masks[i:i + 1],
+                    threshold=0.5
+                )
+
+                # Accumulate overall intersection and union.
+
+                total_intersection += intersection
+                total_union += union
+
+                # Initialise each area when first encountered.
+
+                if area not in area_intersections:
+
+                    area_intersections[area] = torch.zeros(
+                        1,
+                        device=device
+                    )
+
+                    area_unions[area] = torch.zeros(
+                        1,
+                        device=device
+                    )
+
+                # Accumulate intersection and union for
+                # this geographical area.
+
+                area_intersections[area] += intersection
+                area_unions[area] += union
+
+    # Preserve the existing average validation loss.
+
     average_loss = running_loss / len(data_loader)
 
-    # Calculate IoU for lava.
-    # If there are no predicted or labelled lava pixels, assign NaN.
-    average_iou = torch.where(
+    # Calculate overall pixel-pooled IoU.
+
+    overall_iou = torch.where(
         total_union > 0,
         total_intersection / total_union.clamp(min=1),
         torch.full_like(total_union, float("nan"))
     )
 
-    return average_loss, average_iou
+    # Calculate individual regional IoUs.
 
+    area_ious = {}
+
+    for area in sorted(
+        area_intersections,
+        key=lambda name: int(name[4:])
+    ):
+
+        intersection = area_intersections[area]
+        union = area_unions[area]
+
+        if union.item() == 0:
+            raise ValueError(
+                f"Validation IoU is undefined for {area}. "
+                "Neither predictions nor ground-truth masks "
+                "contain lava pixels."
+            )
+
+        area_ious[area] = (
+            intersection / union
+        ).item()
+
+    if not area_ious:
+        raise ValueError(
+            "No validation areas were found."
+        )
+
+    # Give every geographical area equal weight.
+
+    mean_area_iou = (
+        sum(area_ious.values()) / len(area_ious)
+    )
+
+    return average_loss, overall_iou, area_ious, mean_area_iou
 #  ==========================================================
 
 #  CREATE TRAINING DATASET
@@ -540,10 +616,19 @@ print(f"Validation images: {len(val_dataset)}")
 
 print(f"Validation batches per epoch: {len(val_loader)}")
 
+# Identify validation areas from the dataset filenames.
 
+validation_areas = sorted(
+    {
+        get_validation_area(path.name)
+        for path in val_dataset.image_files
+    },
+    key=lambda name: int(name[4:])
+)
 
+print(f"Validation areas: {validation_areas}")
 
-
+'''
 #  ==========================================================
 
 #  PRE-TRAINING CHECK
@@ -684,7 +769,7 @@ if confirmation != "y":
 
 
 
-
+'''
 
 #  ==========================================================
 
@@ -909,8 +994,14 @@ history_headers = [
     "Lava IoU",
     "Learning Rate",
     "Best Lava IoU",
-    "Checkpoint Saved"
+    "Checkpoint Saved",
+    "Mean Area IoU",
 ]
+
+history_headers.extend(
+    f"{area} IoU"
+    for area in validation_areas
+)
 
 #  Add and format the column headings.
 
@@ -961,7 +1052,13 @@ for column, width in column_widths.items():
     history_sheet.column_dimensions[column].width = width
 
 
+from openpyxl.utils import get_column_letter
 
+for column in range(8, len(history_headers) + 1):
+
+    column_letter = get_column_letter(column)
+
+    history_sheet.column_dimensions[column_letter].width = 18
 
 
 #  ==========================================================
@@ -1226,27 +1323,15 @@ if RESUME_TRAINING and os.path.exists(MODEL_PATH):
 
         #  Evaluate the loaded model using the binary loss.
 
-        _, best_val_iou = evaluate(
-
+        _, _, _, best_val_score = evaluate(
             model,
-
             val_loader,
-
             criterion_bce
-
         )
 
 
 
-        #  Extract IoU for lava.
-        #
-        #  Channel 0 = Lava
 
-        lava_iou = best_val_iou[0].item()
-
-        #  Use lava IoU as the validation score.
-
-        best_val_score = lava_iou
 
 
 
@@ -1333,55 +1418,41 @@ for epoch in range(NUM_EPOCHS):
     #  ------------------------------------------------------
 
 
+average_val_loss, overall_val_iou, area_ious, mean_area_iou = evaluate(
+    model,
+    val_loader,
+    criterion_bce
+)
 
-    #  Evaluate the model on the validation dataset.
+# Overall pixel-pooled lava IoU.
 
-    average_val_loss, average_val_iou = evaluate(
+lava_iou = overall_val_iou[0].item()
 
-        model,
+if torch.isnan(overall_val_iou[0]):
 
-        val_loader,
-
-        criterion_bce
-
+    raise ValueError(
+        "Overall validation IoU is undefined for lava."
     )
 
+# Use the unweighted mean regional IoU
+# for checkpoint selection and learning-rate scheduling.
 
-
-    #  Extract IoU for lava.
-    #
-    #  Channel 0 = Lava
-
-    lava_iou = average_val_iou[0].item()
-
-    #  Check that lava IoU is defined.
-
-    if torch.isnan(average_val_iou[0]):
-
-        raise ValueError(
-            "Validation IoU is undefined for lava. "
-            "Check the validation dataset and predictions."
-        )
-
-    #  Use lava IoU as the validation score.
-
-    mean_foreground_iou = lava_iou
+mean_foreground_iou = mean_area_iou
 
 
 
+#  ------------------------------------------------------
 
-    #  ------------------------------------------------------
+#  UPDATE LEARNING RATE
 
-    #  UPDATE LEARNING RATE
-
-    #  ------------------------------------------------------
+#  ------------------------------------------------------
 
 
 
     #  Give the current lava IoU to the learning-rate
     #  scheduler.
 
-    scheduler.step(mean_foreground_iou)
+scheduler.step(mean_foreground_iou)
 
 
 
@@ -1398,13 +1469,13 @@ for epoch in range(NUM_EPOCHS):
     #  Save a new checkpoint whenever the current lava
     #  IoU exceeds the best score previously observed.
 
-    if mean_foreground_iou > best_val_score:
+if mean_foreground_iou > best_val_score:
 
 
 
         #  Update the stored best score.
 
-        best_val_score = mean_foreground_iou
+    best_val_score = mean_foreground_iou
 
 
 
@@ -1412,15 +1483,15 @@ for epoch in range(NUM_EPOCHS):
 
         #  timestamp together in the checkpoint.
 
-        checkpoint_data = {
+    checkpoint_data = {
 
-            "model_state_dict": model.state_dict(),
+        "model_state_dict": model.state_dict(),
 
-            "best_val_score": best_val_score,
+        "best_val_score": best_val_score,
 
-            "run_timestamp": RUN_TIMESTAMP,
+        "run_timestamp": RUN_TIMESTAMP,
 
-        }
+    }
 
 
 
@@ -1430,13 +1501,13 @@ for epoch in range(NUM_EPOCHS):
 
         #  This file represents the currently active best model.
 
-        torch.save(
+    torch.save(
 
-            checkpoint_data,
+        checkpoint_data,
 
-            MODEL_PATH
+        MODEL_PATH
 
-        )
+    )
 
 
 
@@ -1448,26 +1519,26 @@ for epoch in range(NUM_EPOCHS):
 
         #  model_outputs timestamp folder.
 
-        torch.save(
+    torch.save(
 
-            checkpoint_data,
+        checkpoint_data,
 
-            RUN_MODEL_PATH
+        RUN_MODEL_PATH
 
-        )
-
-
-
-        checkpoint_saved = "Yes"
+    )
 
 
 
-        print(f"Saved new best model with lava IoU: {best_val_score:.6f}")
+    checkpoint_saved = "Yes"
 
 
-    else:
 
-        checkpoint_saved = "No"
+    print(f"Saved new best model with lava IoU: {best_val_score:.6f}")
+
+
+else:
+
+    checkpoint_saved = "No"
 
 
 
@@ -1502,11 +1573,23 @@ for epoch in range(NUM_EPOCHS):
     history_sheet.cell(row=history_row, column=5, value=current_lr)
     history_sheet.cell(row=history_row, column=6, value=best_val_score)
     history_sheet.cell(row=history_row, column=7, value=checkpoint_saved)
+    history_sheet.cell(
+        row=history_row,
+        column=8,
+        value=mean_area_iou
+    )
 
+    for column, area in enumerate(validation_areas, start=9):
+
+        history_sheet.cell(
+            row=history_row,
+            column=column,
+            value=area_ious[area]
+        )
 
     #  Format numerical metrics to six decimal places.
 
-    for column in range(2, 7):
+    for column in list(range(2, 7)) + list(range(8, len(history_headers) + 1)):
 
         history_sheet.cell(
 
@@ -1546,6 +1629,15 @@ for epoch in range(NUM_EPOCHS):
         f"Epoch {epoch + 1}/{NUM_EPOCHS}\n"
         f"Train loss:      {average_train_loss:.6f}\n"
         f"Val loss:        {average_val_loss:.6f}\n"
-        f"Lava IoU:        {lava_iou:.6f}\n"
-        f"Learning rate:   {current_lr:.2e}\n"
+        f"Overall lava IoU: {lava_iou:.6f}\n"
+        f"Mean area IoU:    {mean_area_iou:.6f}\n"
+        f"Learning rate:    {current_lr:.2e}"
     )
+
+    for area in validation_areas:
+
+        print(
+            f"  {area} lava IoU: {area_ious[area]:.6f}"
+        )
+
+    print()

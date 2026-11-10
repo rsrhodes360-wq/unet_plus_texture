@@ -92,6 +92,9 @@ from config import (
     NEW_TRAINING_IMAGES,
     NEW_TRAINING_TEXTURES,
     NEW_TRAINING_MASKS,
+    NEW_VALIDATION_IMAGES,
+    NEW_VALIDATION_TEXTURES,
+    NEW_VALIDATION_MASKS,
 )
 
 # ==========================================================
@@ -455,6 +458,42 @@ def save_tile(
             base_folder / "masks" / filename
         )
 
+# ==========================================================
+# IDENTIFY VALIDATION AREA
+# ==========================================================
+
+def get_validation_area_number(image_name):
+
+    """
+    Extract the geographical validation area number
+    from the original SAR image filename.
+
+    validation_image.tif  -> 1
+    validation_image2.tif -> 2
+    validation_image3.tif -> 3
+    """
+
+    stem = Path(image_name).stem
+
+    prefix = "validation_image"
+
+    if not stem.startswith(prefix):
+        raise ValueError(
+            f"Invalid validation image filename: {image_name}"
+        )
+
+    number = stem[len(prefix):]
+
+    if number == "":
+        return 1
+
+    if not number.isdigit() or int(number) < 1:
+        raise ValueError(
+            f"Cannot identify validation area from: {image_name}"
+        )
+
+    return int(number)
+
 
 # ==========================================================
 # TILE ONE DATASET
@@ -465,7 +504,8 @@ def process_dataset(
     texture_name,
     mask_name,
     output_folder,
-    start_index=0
+    start_index=0,
+    area_number=None
 ):
 
     """
@@ -560,6 +600,9 @@ def process_dataset(
                 f"_x{x:04d}"
                 f"_y{y:04d}.png"
             )
+
+            if area_number is not None:
+                filename = f"area{area_number}_{filename}"
 
             # ------------------------------------------------
             # SAVE MATCHING TILES
@@ -777,15 +820,79 @@ def main():
 
     if tile_validation:
 
+        # --------------------------------------------------
+        # CHECK ADDITIONAL VALIDATION AREA LISTS
+        # --------------------------------------------------
+
+        if not (
+            len(NEW_VALIDATION_IMAGES)
+            == len(NEW_VALIDATION_TEXTURES)
+            == len(NEW_VALIDATION_MASKS)
+        ):
+            raise ValueError(
+                "Additional validation image, texture and mask "
+                "lists must have the same length."
+            )
+
+        # --------------------------------------------------
+        # COMBINE ORIGINAL AND ADDITIONAL VALIDATION AREAS
+        # --------------------------------------------------
+
+        validation_areas = [
+            (
+                VALIDATION_IMAGE,
+                VALIDATION_TEXTURE,
+                VALIDATION_MASK
+            )
+        ]
+
+        validation_areas.extend(
+            zip(
+                NEW_VALIDATION_IMAGES,
+                NEW_VALIDATION_TEXTURES,
+                NEW_VALIDATION_MASKS
+            )
+        )
+
+        # --------------------------------------------------
+        # CHECK AREA NUMBERS ARE UNIQUE
+        # --------------------------------------------------
+
+        area_numbers = [
+            get_validation_area_number(image_name)
+            for image_name, _, _ in validation_areas
+        ]
+
+        if len(area_numbers) != len(set(area_numbers)):
+            raise ValueError(
+                "Duplicate validation area numbers found. "
+                "Check the validation image filenames in config.py."
+            )
+
+        # --------------------------------------------------
+        # PREPARE VALIDATION OUTPUT FOLDERS
+        # --------------------------------------------------
+
         prepare_output_folder("data/validation")
 
-        process_dataset(
-            image_name=VALIDATION_IMAGE,
-            texture_name=VALIDATION_TEXTURE,
-            mask_name=VALIDATION_MASK,
-            output_folder="validation",
-            start_index=0
-        )
+        # --------------------------------------------------
+        # TILE ALL VALIDATION AREAS
+        # --------------------------------------------------
+
+        for image_name, texture_name, mask_name in validation_areas:
+
+            area_number = get_validation_area_number(
+                image_name
+            )
+
+            process_dataset(
+                image_name=image_name,
+                texture_name=texture_name,
+                mask_name=mask_name,
+                output_folder="validation",
+                start_index=0,
+                area_number=area_number
+            )
 
     else:
 

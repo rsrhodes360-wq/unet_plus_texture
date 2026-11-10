@@ -45,6 +45,7 @@ from config import (
     VALIDATION_IMAGE,
     TESTING_IMAGE,
     NEW_TRAINING_IMAGES,
+    NEW_VALIDATION_IMAGES,
 )
 KERNEL_SIZE = 21
 
@@ -232,6 +233,11 @@ def main():
     for i, image_name in enumerate(NEW_TRAINING_IMAGES, start=1):
         datasets.append(
             (f"additional training {i}", image_name)
+        )
+
+    for image_name in NEW_VALIDATION_IMAGES:
+        datasets.append(
+            (f"additional validation {Path(image_name).stem}", image_name)
         )
 
     selected = []
