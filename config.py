@@ -4,7 +4,7 @@
 # SELECT TESTING AREA FOR EVALUATION
 # ==========================================================
 
-TESTING = "area1"
+TESTING = "area4"
 
 
 
@@ -44,6 +44,9 @@ NEW_TRAINING_IMAGES = [
     "training_image3.tif",
     "training_image4.tif",
     "training_image5.tif",
+    "training_image6.tif",
+    "training_image7.tif",
+    "training_image8.tif",
     
 ]
 
@@ -52,6 +55,9 @@ NEW_TRAINING_TEXTURES = [
     "training_image3_texture.tif",
     "training_image4_texture.tif",
     "training_image5_texture.tif",
+    "training_image6_texture.tif",
+    "training_image7_texture.tif",
+    "training_image8_texture.tif",
     
 ]
 
@@ -60,6 +66,9 @@ NEW_TRAINING_MASKS = [
     "training_mask3.tif",
     "training_mask4.tif",
     "training_mask5.tif",
+    "training_mask6.tif",
+    "training_mask7.tif",
+    "training_mask8.tif",
     
 ]
 
@@ -72,6 +81,9 @@ NEW_VALIDATION_IMAGES = [
     "validation_image3.tif",
     "validation_image4.tif",
     "validation_image5.tif",
+    "validation_image6.tif",
+    "validation_image7.tif",
+    "validation_image8.tif",
 ]
 
 NEW_VALIDATION_TEXTURES = [
@@ -79,6 +91,9 @@ NEW_VALIDATION_TEXTURES = [
     "validation_image3_texture.tif",
     "validation_image4_texture.tif",
     "validation_image5_texture.tif",
+    "validation_image6_texture.tif",
+    "validation_image7_texture.tif",
+    "validation_image8_texture.tif",
 ]
 
 NEW_VALIDATION_MASKS = [
@@ -86,6 +101,9 @@ NEW_VALIDATION_MASKS = [
     "validation_mask3.tif",
     "validation_mask4.tif",
     "validation_mask5.tif",
+    "validation_mask6.tif",
+    "validation_mask7.tif",
+    "validation_mask8.tif",
 ]
 
 NEW_TESTING_IMAGES = [
@@ -93,6 +111,9 @@ NEW_TESTING_IMAGES = [
     "testing_image3.tif",
     "testing_image4.tif",
     "testing_image5.tif",
+    "testing_image6.tif",
+    "testing_image7.tif",
+    "testing_image8.tif",
 ]
 
 NEW_TESTING_TEXTURES = [
@@ -100,6 +121,9 @@ NEW_TESTING_TEXTURES = [
     "testing_image3_texture.tif",
     "testing_image4_texture.tif",
     "testing_image5_texture.tif",
+    "testing_image6_texture.tif",
+    "testing_image7_texture.tif",
+    "testing_image8_texture.tif",
 ]
 
 NEW_TESTING_MASKS = [
@@ -107,4 +131,7 @@ NEW_TESTING_MASKS = [
     "testing_mask3.tif",
     "testing_mask4.tif",
     "testing_mask5.tif",
+    "testing_mask6.tif",
+    "testing_mask7.tif",
+    "testing_mask8.tif",
 ]

@@ -52,7 +52,7 @@
 
 import os
 
-
+from statistics import pstdev
 
 #  PyTorch provides the model training and tensor operations.
 
@@ -138,7 +138,7 @@ import matplotlib.pyplot as plt
 
 #  optimisation step.
 
-BATCH_SIZE = 2
+BATCH_SIZE = 8
 
 NUM_WORKERS = 2
 PIN_MEMORY = True
@@ -153,6 +153,12 @@ NUM_EPOCHS = 200
 
 LEARNING_RATE = 1e-4
 
+
+# Standard deviation penalty for checkpoint selection.
+# Higher values place greater emphasis on consistent
+# validation IoU across geographical areas.
+
+IOU_STD_PENALTY = 0.5
 
 
 #  Set to True to continue training from MODEL_PATH.
@@ -178,7 +184,7 @@ MODEL_PATH = "unet_lava_best.pth"
 #  This is an initial value, npythonot a calculated class weight.
 #  We will assess class imbalance before selecting the final weight.
 
-POS_WEIGHTS = [1.3]
+POS_WEIGHTS = [1.5]
 
 
 
@@ -1026,9 +1032,11 @@ def main():
         "Validation Loss",
         "Lava IoU",
         "Learning Rate",
-        "Best Lava IoU",
+        "Best Checkpoint Score",
         "Checkpoint Saved",
         "Mean Area IoU",
+        "Area IoU Std Dev",
+        "Checkpoint Score",
     ]
 
     history_headers.extend(
@@ -1328,7 +1336,13 @@ def main():
 
             #  checkpoint threshold is not reset when training resumes.
 
-            best_val_score = float(checkpoint.get("best_val_score", checkpoint.get("best_val_iou", 0.0)))
+            if checkpoint.get("selection_metric") != "mean_minus_std":
+                raise ValueError(
+                    "Checkpoint uses an older selection metric. "
+                    "Cannot resume with the new combined score."
+                )
+
+            best_val_score = float(checkpoint["best_val_score"])
 
 
 
@@ -1356,11 +1370,16 @@ def main():
 
             #  Evaluate the loaded model using the binary loss.
 
-            _, _, _, best_val_score = evaluate(
+            _, _, area_ious, mean_area_iou = evaluate(
                 model,
                 val_loader,
                 criterion_bce,
                 device
+            )
+
+            best_val_score = (
+                mean_area_iou
+                - IOU_STD_PENALTY * pstdev(area_ious.values())
             )
 
 
@@ -1469,10 +1488,19 @@ def main():
                 "Overall validation IoU is undefined for lava."
             )
 
-        # Use the unweighted mean regional IoU
-        # for checkpoint selection and learning-rate scheduling.
+        # Use mean regional IoU for learning-rate scheduling.
 
         mean_foreground_iou = mean_area_iou
+
+        # Calculate variation in IoU across validation areas.
+
+        area_iou_std = pstdev(area_ious.values())
+
+        # Combined score for checkpoint selection.
+
+        checkpoint_score = (
+            mean_area_iou - IOU_STD_PENALTY * area_iou_std
+        )
 
 
 
@@ -1504,13 +1532,13 @@ def main():
             #  Save a new checkpoint whenever the current lava
             #  IoU exceeds the best score previously observed.
 
-        if mean_foreground_iou > best_val_score:
+        if checkpoint_score > best_val_score:
 
 
 
                 #  Update the stored best score.
 
-            best_val_score = mean_foreground_iou
+            best_val_score = checkpoint_score
 
 
 
@@ -1519,13 +1547,11 @@ def main():
                 #  timestamp together in the checkpoint.
 
             checkpoint_data = {
-
                 "model_state_dict": model.state_dict(),
-
                 "best_val_score": best_val_score,
-
+                "selection_metric": "mean_minus_std",
+                "iou_std_penalty": IOU_STD_PENALTY,
                 "run_timestamp": RUN_TIMESTAMP,
-
             }
 
 
@@ -1568,7 +1594,10 @@ def main():
 
 
 
-            print(f"Saved new best model with lava IoU: {best_val_score:.6f}")
+            print(
+                f"Saved new best model with combined score: "
+                f"{best_val_score:.6f}"
+            )
 
 
         else:
@@ -1614,7 +1643,19 @@ def main():
             value=mean_area_iou
         )
 
-        for column, area in enumerate(validation_areas, start=9):
+        history_sheet.cell(
+            row=history_row,
+            column=9,
+            value=area_iou_std
+        )
+
+        history_sheet.cell(
+            row=history_row,
+            column=10,
+            value=checkpoint_score
+        )
+
+        for column, area in enumerate(validation_areas, start=11):
 
             history_sheet.cell(
                 row=history_row,
@@ -1662,11 +1703,13 @@ def main():
 
         print(
             f"Epoch {epoch + 1}/{NUM_EPOCHS}\n"
-            f"Train loss:      {average_train_loss:.6f}\n"
-            f"Val loss:        {average_val_loss:.6f}\n"
-            f"Overall lava IoU: {lava_iou:.6f}\n"
-            f"Mean area IoU:    {mean_area_iou:.6f}\n"
-            f"Learning rate:    {current_lr:.2e}"
+            f"Train loss:        {average_train_loss:.6f}\n"
+            f"Val loss:          {average_val_loss:.6f}\n"
+            f"Overall lava IoU:  {lava_iou:.6f}\n"
+            f"Mean area IoU:     {mean_area_iou:.6f}\n"
+            f"Area IoU std dev:  {area_iou_std:.6f}\n"
+            f"Checkpoint score:  {checkpoint_score:.6f}\n"
+            f"Learning rate:     {current_lr:.2e}"
         )
 
         for area in validation_areas:

@@ -307,7 +307,7 @@ MODEL_PATH = Path("unet_lava_best.pth")
 #
 # Channel 0 = Lava
 
-LAVA_THRESHOLD = 0.5
+LAVA_THRESHOLD = 0.95
 
 
 # Main folder containing archived training-run outputs.
