@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from scipy.ndimage import uniform_filter
+from scipy.ndimage import uniform_filter, label, find_objects
 
 
 # ==========================================================
@@ -51,6 +51,12 @@ from config import (
 
 
 KERNEL_SIZE = 21
+
+
+# Minimum number of 8-connected zero-valued SAR pixels
+# required for a region to be classified as NoData.
+
+MIN_NODATA_REGION_SIZE = 6
 
 # Reflect values at image boundaries when calculating
 # the focal mean.
@@ -99,6 +105,108 @@ def generate_texture(image_name):
         profile = src.profile.copy()
 
     valid &= np.isfinite(sar)
+
+
+
+    # ------------------------------------------------------
+    # IDENTIFY ZERO-VALUED NODATA REGIONS
+    # ------------------------------------------------------
+
+    # Identify zero-valued pixels in the original SAR image.
+    # Only consider pixels not already marked as NoData.
+
+    zero_pixels = (sar == 0) & valid
+
+    # Define 8-connectivity, including diagonal neighbours.
+
+    connectivity = np.ones((3, 3), dtype=np.uint8)
+
+    # Identify connected regions of zero-valued pixels.
+
+    labelled_regions, number_of_regions = label(
+        zero_pixels,
+        structure=connectivity
+    )
+
+    # Count the number of pixels in each connected region.
+    # Region 0 represents pixels outside the zero-valued regions.
+
+    region_sizes = np.bincount(labelled_regions.ravel())
+
+    # Identify connected zero-valued regions that are
+    # large enough to be considered NoData.
+
+    nodata_region_ids = np.where(
+        region_sizes >= MIN_NODATA_REGION_SIZE
+    )[0]
+
+    # Exclude background label 0.
+
+    nodata_region_ids = nodata_region_ids[
+        nodata_region_ids != 0
+    ]
+
+    # Identify the bounding box of each connected region.
+
+    region_slices = find_objects(labelled_regions)
+
+    # Retain regions that are exactly one pixel wide.
+
+    for region_id in nodata_region_ids.copy():
+
+        region_slice = region_slices[region_id - 1]
+
+        if region_slice is None:
+            continue
+
+        region_height = (
+            region_slice[0].stop - region_slice[0].start
+        )
+
+        region_width = (
+            region_slice[1].stop - region_slice[1].start
+        )
+
+        if (region_width == 1) != (region_height == 1):
+            nodata_region_ids = nodata_region_ids[
+                nodata_region_ids != region_id
+            ]
+
+    # Classify the remaining regions as NoData.
+
+    nodata_regions = np.isin(
+        labelled_regions,
+        nodata_region_ids
+    )
+
+    # Exclude these regions from the valid-data array.
+
+    valid &= ~nodata_regions
+
+    # Report the classification results.
+
+    newly_invalid_pixels = np.count_nonzero(nodata_regions)
+
+    retained_zero_pixels = np.count_nonzero(
+        zero_pixels & ~nodata_regions
+    )
+
+    print(
+        f"Zero-valued SAR regions found: {number_of_regions:,}"
+    )
+
+    print(
+        f"Pixels classified as additional NoData: "
+        f"{newly_invalid_pixels:,}"
+    )
+
+    print(
+        f"Zero-valued pixels retained as valid: "
+        f"{retained_zero_pixels:,}"
+    )
+
+
+
 
     # ------------------------------------------------------
     # CALCULATE 21 x 21 FOCAL MEAN

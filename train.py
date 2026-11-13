@@ -184,7 +184,7 @@ MODEL_PATH = "unet_lava_best.pth"
 #  This is an initial value, npythonot a calculated class weight.
 #  We will assess class imbalance before selecting the final weight.
 
-POS_WEIGHTS = [1.5]
+POS_WEIGHTS = [1]
 
 
 
@@ -561,7 +561,8 @@ def main():
         images_dir="data/training/images",
         masks_dir="data/training/masks",
         texture_dir="data/training/texture",
-        augment=USE_AUGMENTATION
+        augment=USE_AUGMENTATION,
+        brightness_augment=USE_BRIGHTNESS_AUGMENTATION
     )
 
     # Retain the original dataset variable for existing reporting and logging.
@@ -989,8 +990,9 @@ def main():
     summary_sheet["A27"] = "Training passes per epoch"
     summary_sheet["B27"] = "Original, then augmented"
     summary_sheet["A28"] = "Brightness augmentation"
-    summary_sheet["B28"] = "SAR only; multiplier U(0.7, 1.3); probability 0.5"
-    summary_sheet["A29"] = "Training texture folder"
+    summary_sheet["B28"] = str(USE_BRIGHTNESS_AUGMENTATION)
+    summary_sheet["A31"] = "Brightness augmentation parameters"
+    summary_sheet["B31"] = "SAR only; multiplier U(0.7, 1.3); probability 0.5"
     summary_sheet["B29"] = "data/training/texture"
     summary_sheet["A30"] = "Validation texture folder"
     summary_sheet["B30"] = "data/validation/texture"

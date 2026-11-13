@@ -1049,6 +1049,32 @@ lava_probability_np = (
     average_probability[0].cpu().numpy().astype(np.float32)
 )
 
+
+# ----------------------------------------------------------
+# PREPARE GEOTIFF ARRAYS WITH EXPLICIT NODATA
+# ----------------------------------------------------------
+
+# Pixels with no contributing prediction tiles.
+
+unevaluated_pixels = count_map.cpu().numpy() == 0
+
+# Create a separate segmentation array for GeoTIFF export.
+# Keep the original array unchanged for PNG outputs.
+
+final_mask_tif = final_mask_np.copy()
+final_mask_tif[unevaluated_pixels] = 255
+
+# Create a separate probability array for GeoTIFF export.
+# Keep the original probability array unchanged for PNGs.
+
+lava_probability_tif = lava_probability_np.copy()
+lava_probability_tif[unevaluated_pixels] = np.nan
+
+print(
+    f"Pixels without predictions: "
+    f"{np.count_nonzero(unevaluated_pixels):,}"
+)
+
 # ==========================================================
 # SAVE FINAL SEGMENTATION GEOTIFF
 # ==========================================================
@@ -1068,12 +1094,13 @@ if crs is not None and transform is not None:
         width=image_width,
         count=1,
         dtype="uint8",
+        nodata=255,
         crs=crs,
         transform=transform,
         compress="lzw",
     ) as dst:
 
-        dst.write(final_mask_np, 1)
+        dst.write(final_mask_tif, 1)
 
     print(f"Saved segmentation GeoTIFF: {segmentation_tif_path}")
 
@@ -1149,12 +1176,13 @@ for class_name, probability_map in probability_maps.items():
             width=image_width,
             count=1,
             dtype="float32",
+            nodata=np.nan,
             crs=crs,
             transform=transform,
             compress="lzw",
         ) as dst:
 
-            dst.write(probability_map, 1)
+            dst.write(lava_probability_tif, 1)
 
         print(f"Saved probability GeoTIFF: {tif_path}")
 

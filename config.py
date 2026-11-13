@@ -4,7 +4,7 @@
 # SELECT TESTING AREA FOR EVALUATION
 # ==========================================================
 
-TESTING = "area4"
+TESTING = "area1"
 
 
 
@@ -47,6 +47,7 @@ NEW_TRAINING_IMAGES = [
     "training_image6.tif",
     "training_image7.tif",
     "training_image8.tif",
+    "training_image9.tif",
     
 ]
 
@@ -58,6 +59,7 @@ NEW_TRAINING_TEXTURES = [
     "training_image6_texture.tif",
     "training_image7_texture.tif",
     "training_image8_texture.tif",
+    "training_image9_texture.tif",
     
 ]
 
@@ -69,6 +71,7 @@ NEW_TRAINING_MASKS = [
     "training_mask6.tif",
     "training_mask7.tif",
     "training_mask8.tif",
+    "training_mask9.tif",
     
 ]
 
